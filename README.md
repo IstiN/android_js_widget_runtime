@@ -3,6 +3,8 @@
 Нативный Android-рандер jsr-виджетов (контракт `flutter_js_widget_runtime`)
 без Flutter: **QuickJS через JNI + JSON-дерево → Android Views**.
 
+Семья: контракт и протокол тестирования — [js_widget_runtime](https://github.com/IstiN/js_widget_runtime) (PROTOCOL.md), ядро движка — [js_runtime](https://github.com/IstiN/js_runtime), эталон — [flutter_js_widget_runtime](https://github.com/IstiN/flutter_js_widget_runtime). Соседи: [ios](https://github.com/IstiN/ios_js_widget_runtime) / [macos](https://github.com/IstiN/macos_js_widget_runtime) / [react](https://github.com/IstiN/react_js_widget_runtime).
+
 Мотивация: на Tegra 2 (без NEON) Flutter-рендер упирается в CPU-пайплайн
 Skia — 117 мс только на LayerTree::Paint, 7 fps. Нативный рендер на том же
 устройстве рисует кадр за 8–12 мс (p50). Этот POC доказывает, что jsr-виджеты
