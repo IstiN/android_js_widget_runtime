@@ -1,0 +1,22 @@
+# ninja log v5
+0	505	1795531185434322175	CMakeFiles/quickjs.dir/quickjs/libregexp.c.o	f17d7bdec35daa5
+3	476	1795531185405756453	CMakeFiles/quickjs.dir/quickjs/libunicode.c.o	ba8575a07759fe42
+6	192	1795531185122253624	CMakeFiles/quickjs.dir/quickjs/cutils.c.o	d1692699cf7e9c0e
+8	1002	1795531185927250605	CMakeFiles/quickjs.dir/quickjs/libbf.c.o	b9c4553b30dd165d
+9	128	1795531185058195407	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	7f265a6f91967888
+6	188	1795531244162275604	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	59bcdd00849eb070
+3	318	1795531244289135484	CMakeFiles/quickjs.dir/quickjs/cutils.c.o	4a74924a5a5f3367
+2	474	1795531244443092282	CMakeFiles/quickjs.dir/quickjs/libunicode.c.o	98727e69b4322c9d
+1	494	1795531244466340039	CMakeFiles/quickjs.dir/quickjs/libregexp.c.o	63ef2d23f5c8c4f5
+4	1093	1795531245056744745	CMakeFiles/quickjs.dir/quickjs/libbf.c.o	e48b593c864f96de
+0	5954	1795531249893643985	CMakeFiles/quickjs.dir/quickjs/quickjs.c.o	5ce09bb057960abe
+5955	6497	1795531250473396000	libquickjs.a	9f4abc6ef2df3c10
+6497	6583	1795531250553679335	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/arm64-v8a/libjsr_bridge.so	9efd07b59dc47d78
+0	28	1795531302640112138	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	59bcdd00849eb070
+28	62	1795531302668537817	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/arm64-v8a/libjsr_bridge.so	9efd07b59dc47d78
+0	138	1795531356649135251	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	59bcdd00849eb070
+139	244	1795531356746450192	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/arm64-v8a/libjsr_bridge.so	9efd07b59dc47d78
+0	129	1795531749982668043	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	59bcdd00849eb070
+129	250	1795531750093570193	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/arm64-v8a/libjsr_bridge.so	9efd07b59dc47d78
+0	60	1795531820605173562	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	59bcdd00849eb070
+60	174	1795531820711015207	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/arm64-v8a/libjsr_bridge.so	9efd07b59dc47d78

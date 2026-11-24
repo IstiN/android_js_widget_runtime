@@ -1,0 +1,17 @@
+# ninja log v5
+1	44	1795531250941463294	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	6c3037ba8f697051
+0	89	1795531250987026465	CMakeFiles/quickjs.dir/quickjs/cutils.c.o	76633ce94a0b8374
+0	196	1795531251093685284	CMakeFiles/quickjs.dir/quickjs/libunicode.c.o	d0120ae0f49a1d1e
+0	209	1795531251106848197	CMakeFiles/quickjs.dir/quickjs/libregexp.c.o	d3cc7cf49ff7b7f0
+1	621	1795531251516215438	CMakeFiles/quickjs.dir/quickjs/libbf.c.o	2d93c2b07b6269e0
+0	5028	1795531255895082321	CMakeFiles/quickjs.dir/quickjs/quickjs.c.o	e197ac889d9fcfd6
+5028	5063	1795531255962855000	libquickjs.a	9f4abc6ef2df3c10
+5063	5099	1795531255991922425	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/armeabi-v7a/libjsr_bridge.so	5e7c789c55d4dcab
+0	28	1795531302717861648	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	6c3037ba8f697051
+28	61	1795531302747146919	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/armeabi-v7a/libjsr_bridge.so	5e7c789c55d4dcab
+0	34	1795531356802921714	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	6c3037ba8f697051
+34	82	1795531356848578803	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/armeabi-v7a/libjsr_bridge.so	5e7c789c55d4dcab
+0	32	1795531750152688322	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	6c3037ba8f697051
+32	73	1795531750188623321	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/armeabi-v7a/libjsr_bridge.so	5e7c789c55d4dcab
+0	30	1795531820767131267	CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o	6c3037ba8f697051
+30	82	1795531820808890653	/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/build/intermediates/cxx/Debug/546j2j21/obj/armeabi-v7a/libjsr_bridge.so	5e7c789c55d4dcab

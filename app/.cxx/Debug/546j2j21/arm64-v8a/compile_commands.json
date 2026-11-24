@@ -1,0 +1,32 @@
+[
+{
+  "directory": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/arm64-v8a",
+  "command": "/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=aarch64-none-linux-android24 --sysroot=/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DCONFIG_VERSION=\\\"2024-01-13\\\" -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -O2 -D_GNU_SOURCE -Wno-implicit-const-int-float-conversion -Wno-array-bounds -o CMakeFiles/quickjs.dir/quickjs/quickjs.c.o -c /Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/quickjs.c",
+  "file": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/quickjs.c"
+},
+{
+  "directory": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/arm64-v8a",
+  "command": "/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=aarch64-none-linux-android24 --sysroot=/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DCONFIG_VERSION=\\\"2024-01-13\\\" -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -O2 -D_GNU_SOURCE -Wno-implicit-const-int-float-conversion -Wno-array-bounds -o CMakeFiles/quickjs.dir/quickjs/libregexp.c.o -c /Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/libregexp.c",
+  "file": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/libregexp.c"
+},
+{
+  "directory": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/arm64-v8a",
+  "command": "/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=aarch64-none-linux-android24 --sysroot=/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DCONFIG_VERSION=\\\"2024-01-13\\\" -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -O2 -D_GNU_SOURCE -Wno-implicit-const-int-float-conversion -Wno-array-bounds -o CMakeFiles/quickjs.dir/quickjs/libunicode.c.o -c /Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/libunicode.c",
+  "file": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/libunicode.c"
+},
+{
+  "directory": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/arm64-v8a",
+  "command": "/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=aarch64-none-linux-android24 --sysroot=/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DCONFIG_VERSION=\\\"2024-01-13\\\" -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -O2 -D_GNU_SOURCE -Wno-implicit-const-int-float-conversion -Wno-array-bounds -o CMakeFiles/quickjs.dir/quickjs/cutils.c.o -c /Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/cutils.c",
+  "file": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/cutils.c"
+},
+{
+  "directory": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/arm64-v8a",
+  "command": "/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=aarch64-none-linux-android24 --sysroot=/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DCONFIG_VERSION=\\\"2024-01-13\\\" -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -O2 -D_GNU_SOURCE -Wno-implicit-const-int-float-conversion -Wno-array-bounds -o CMakeFiles/quickjs.dir/quickjs/libbf.c.o -c /Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/libbf.c",
+  "file": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs/libbf.c"
+},
+{
+  "directory": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/arm64-v8a",
+  "command": "/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=aarch64-none-linux-android24 --sysroot=/Users/uladzimir_klyshevich/Library/Android/sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DCONFIG_VERSION=\\\"2024-01-13\\\" -Djsr_bridge_EXPORTS -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs -I/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -o CMakeFiles/jsr_bridge.dir/quickjs_jni.c.o -c /Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs_jni.c",
+  "file": "/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/quickjs_jni.c"
+}
+]

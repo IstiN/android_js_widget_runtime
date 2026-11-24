@@ -1,0 +1,1 @@
+/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/src/main/cpp/CMakeLists.txt

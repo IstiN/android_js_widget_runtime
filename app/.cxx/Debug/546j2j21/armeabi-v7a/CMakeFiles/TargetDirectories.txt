@@ -1,0 +1,4 @@
+/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/armeabi-v7a/CMakeFiles/quickjs.dir
+/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/armeabi-v7a/CMakeFiles/jsr_bridge.dir
+/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/uladzimir_klyshevich/git/android_js_widget_runtime/app/.cxx/Debug/546j2j21/armeabi-v7a/CMakeFiles/rebuild_cache.dir
