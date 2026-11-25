@@ -93,6 +93,9 @@ jobs:
           api-level: 30
           target: google_apis
           arch: x86_64
+          # TCG-эмулятор падает в adb-шаге отключения анимаций (broken pipe);
+          # драйвер шлёт MotionEvent напрямую, анимации не нужны.
+          disable-animations: false
           script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.filter=hello,counter,scroll_list
 
       - name: Collect results
