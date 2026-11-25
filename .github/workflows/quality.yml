@@ -105,11 +105,16 @@ jobs:
           script: |
             ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=hello,counter,scroll_list
             # AGP additionalTestOutput is unreliable on api 24 (warning already
-            # at install, empty pull). ConformanceResult also writes the
-            # app-external files dir — pull that copy directly over adb.
+            # at install, empty pull) and the external dirs may be unwritable
+            # on this image; the runner also writes to the app-INTERNAL files
+            # dir, collected here via run-as. logcat shows each write result.
+            adb shell "ls -R /sdcard/Android/media/com.test.jsr 2>/dev/null; ls /sdcard/Android/data/com.test.jsr/files 2>/dev/null" || true
+            adb logcat -d -s ConformanceResult || true
             mkdir -p app/build/reports/conformance
-            adb shell ls /sdcard/Android/data/com.test.jsr/files/conformance || true
-            adb pull /sdcard/Android/data/com.test.jsr/files/conformance/. app/build/reports/conformance/ || true
+            for f in $(adb shell run-as com.test.jsr ls files/conformance 2>/dev/null | tr -d '\r'); do
+              adb exec-out run-as com.test.jsr cat "files/conformance/$f" > "app/build/reports/conformance/$f"
+            done
+            ls app/build/reports/conformance/ || true
 
       - name: Collect results
         run: |
@@ -195,9 +200,15 @@ jobs:
           disable-animations: false
           script: |
             ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=${{ steps.list.outputs.filter }}
+            # Same collection path as the seeds job: app-internal files dir
+            # via run-as (external pulls are empty on this image).
+            adb shell "ls -R /sdcard/Android/media/com.test.jsr 2>/dev/null; ls /sdcard/Android/data/com.test.jsr/files 2>/dev/null" || true
+            adb logcat -d -s ConformanceResult || true
             mkdir -p app/build/reports/conformance
-            adb shell ls /sdcard/Android/data/com.test.jsr/files/conformance || true
-            adb pull /sdcard/Android/data/com.test.jsr/files/conformance/. app/build/reports/conformance/ || true
+            for f in $(adb shell run-as com.test.jsr ls files/conformance 2>/dev/null | tr -d '\r'); do
+              adb exec-out run-as com.test.jsr cat "files/conformance/$f" > "app/build/reports/conformance/$f"
+            done
+            ls app/build/reports/conformance/ || true
 
       - name: Collect results
         run: |

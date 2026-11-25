@@ -1,19 +1,24 @@
 package com.test.jsr
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 
 /**
  * result.json фикстуры (план 1.4): DONE пишут раннеры, PASS ставит обвязка.
- * Дополнительный вывод AGP: /sdcard/Android/media/<pkg>/additional_test_output
- * (каталог additional_test_output на устройстве, AGP >= 7); дублируем в
- * getExternalFilesDir на случай образов без media-каталога.
+ * Три копии: внутренняя filesDir (пишется всегда; собирается через
+ * `adb run-as` — AGP additionalTestOutput pull на api 24 пустой),
+ * /sdcard/Android/media/<pkg>/additional_test_output (путь AGP) и
+ * getExternalFilesDir. Каждый успех/провал — в logcat (шаг диагностики в CI).
  */
 object ConformanceResult {
 
+    private const val TAG = "ConformanceResult"
+
     fun write(target: Context, fixtureId: String, json: JSONObject) {
         val dirs = listOfNotNull(
+            File(target.filesDir, "conformance"),
             File("/sdcard/Android/media/" + target.packageName + "/additional_test_output/conformance"),
             target.getExternalFilesDir(null)?.let { File(it, "conformance") },
         )
@@ -24,8 +29,9 @@ object ConformanceResult {
         try {
             dir.mkdirs()
             File(dir, "$fixtureId.result.json").writeText(json.toString(2))
+            Log.i(TAG, "result written: $dir/$fixtureId.result.json")
         } catch (e: Exception) {
-            android.util.Log.w("ConformanceResult", "write failed: $dir: $e")
+            Log.w(TAG, "write failed: $dir: $e")
         }
     }
 }
