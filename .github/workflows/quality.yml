@@ -107,14 +107,15 @@ jobs:
             # AGP additionalTestOutput is unreliable on api 24 (warning already
             # at install, empty pull) and the external dirs may be unwritable
             # on this image; the runner also writes to the app-INTERNAL files
-            # dir, collected here via run-as. logcat shows each write result.
+            # dir, collected as root via `su 0` (run-as is broken on the
+            # api-24 image; logcat shows each write result).
             # NOTE: the emulator-runner action runs the script LINE BY LINE
             # (sh -c per line) — shell control flow must stay on one line.
             adb shell "ls -R /sdcard/Android/media/com.test.jsr 2>/dev/null; ls /sdcard/Android/data/com.test.jsr/files 2>/dev/null" || true
             adb logcat -d -s ConformanceResult || true
             mkdir -p app/build/reports/conformance
-            adb shell run-as com.test.jsr ls -la /data/user/0/com.test.jsr/files/conformance || true
-            for f in $(adb shell run-as com.test.jsr ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out run-as com.test.jsr cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
+            adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
+            for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
 
       - name: Collect results
@@ -203,13 +204,13 @@ jobs:
           script: |
             ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=${{ steps.list.outputs.filter }}
             # Same collection path as the seeds job: app-internal files dir
-            # via run-as (external pulls are empty on this image). One line
-            # per command: the action runs the script line by line.
+            # as root via `su 0` (run-as broken on this image; one line per
+            # command: the action runs the script line by line).
             adb shell "ls -R /sdcard/Android/media/com.test.jsr 2>/dev/null; ls /sdcard/Android/data/com.test.jsr/files 2>/dev/null" || true
             adb logcat -d -s ConformanceResult || true
             mkdir -p app/build/reports/conformance
-            adb shell run-as com.test.jsr ls -la /data/user/0/com.test.jsr/files/conformance || true
-            for f in $(adb shell run-as com.test.jsr ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out run-as com.test.jsr cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
+            adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
+            for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
 
       - name: Collect results
