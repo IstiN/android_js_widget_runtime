@@ -56,9 +56,7 @@ jobs:
   # План 6.1 A2: раннер фикстур на эмуляторе; обвязка ставит PASS по seed.
   # A3 расширит до всех L0 фикстур (без аргумента filter).
   conformance:
-    # ubuntu-раннеры этого окружения не дают KVM ("hardware acceleration
-    # is not available"); macOS-раннер даёт Hypervisor.framework нативно.
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -81,16 +79,20 @@ jobs:
         with:
           node-version: '22'
 
-      # Версия экшена не проверена локально (план 556). История: api 24 не
-      # грузится на GH Actions (контингенция плана §9 -> api 30); ubuntu-раннеры
-      # без KVM (-> macos-15); macos-15 это arm64: образ x86_64 не стартует
-      # без Rosetta, берём нативный arm64-v8a (приложение собирает arm64).
+      # Версия экшена не проверена локально (план 556). История загрузок:
+      # api 24 не стартует на GH Actions (контингенция плана §9 -> api 30);
+      # ubuntu без KVM; macos-15 (arm64) без вложенного HVF ("HVF error:
+      # HV_UNSUPPORTED"). Итог: ubuntu + TCG (ANDoid emulator официально
+      # разрешает софт-эмуляцию через ANDROID_I_WANT_MY_TCG=yes), образ
+      # x86_64 совпадает с архитектурой хоста.
       - name: Run fixtures on the emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_I_WANT_MY_TCG: 'yes'
         with:
           api-level: 30
           target: google_apis
-          arch: arm64-v8a
+          arch: x86_64
           script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.filter=hello,counter,scroll_list
 
       - name: Collect results
