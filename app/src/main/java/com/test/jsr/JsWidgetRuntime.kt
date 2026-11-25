@@ -3,30 +3,37 @@ package com.test.jsr
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import org.json.JSONObject
 
 /**
- * Обёртка над QuickJS через JNI. Контракт зеркалит flutter_js_widget_runtime:
- * JS -> хост через sendMessage(channel, payloadJson),
- * хост -> JS через jsr._handler(actionId, payload).
+ * QuickJS-движок поверх JNI-моста. Имя класса зафиксировано quickjs_jni.c
+ * (символы Java_com_test_jsr_JsWidgetRuntime_*), поэтому обёртка JNI живёт
+ * здесь, а не в отдельном QuickJsEngine.
  */
-class JsWidgetRuntime(private val listener: Listener) {
-    interface Listener {
-        fun onJsMessage(channel: String, payload: String)
-    }
-
+class JsWidgetRuntime : JsEngine {
     private var handle: Long = 0
+
+    /** Точка выхода сообщений из JS; вызывается через onJsMessage из C. */
+    var messageSink: ((channel: String, payload: String) -> Unit)? = null
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val timers = mutableMapOf<String, Runnable>()
 
-    /** Каналы таймеров из bootstrap: __jsr_set_interval / __jsr_clear_interval */
-    var timerHandler: ((channel: String, payload: String) -> Unit)? = null
-
     fun start() {
+        check(handle == 0L) { "engine already started" }
         handle = nativeCreate()
         check(handle != 0L) { "QuickJS init failed" }
     }
 
-    fun dispose() {
+    override fun eval(code: String, sourceName: String): String? {
+        check(handle != 0L) { "engine not started" }
+        return nativeEval(handle, code)
+    }
+
+    /** JNI сливает очередь задач после каждого eval/callEvent — no-op. */
+    override fun executePendingJobs() = Unit
+
+    override fun dispose() {
         timers.values.forEach(mainHandler::removeCallbacks)
         timers.clear()
         if (handle != 0L) {
@@ -35,21 +42,16 @@ class JsWidgetRuntime(private val listener: Listener) {
         }
     }
 
-    /** Вызывается из JNI (глобальная JS-функция sendMessage). */
-    fun onJsMessage(channel: String, payload: String) {
-        when (channel) {
-            "__jsr_set_interval", "__jsr_clear_interval" ->
-                timerHandler?.invoke(channel, payload)
-            else -> listener.onJsMessage(channel, payload)
-        }
+    /** Доставляет событие в виджет: jsr._handler(actionId, payload). */
+    fun callEvent(actionId: String, payloadJson: String = "{}"): String? {
+        check(handle != 0L) { "engine not started" }
+        return nativeCallEvent(handle, actionId, payloadJson)
     }
 
-    /** Оценивает JS-код; возвращает текст ошибки или null. */
-    fun eval(code: String): String? = nativeEval(handle, code)
-
-    /** Доставляет событие в виджет: jsr._handler(actionId, payload). */
-    fun callEvent(actionId: String, payloadJson: String = "{}"): String? =
-        nativeCallEvent(handle, actionId, payloadJson)
+    /** Вызывается из JNI (глобальная JS-функция sendMessage). */
+    fun onJsMessage(channel: String, payload: String) {
+        messageSink?.invoke(channel, payload)
+    }
 
     /**
      * Планирует JS-таймер из канала __jsr_set_interval.
@@ -57,7 +59,7 @@ class JsWidgetRuntime(private val listener: Listener) {
      */
     fun scheduleTimer(payload: String, tick: () -> Unit) {
         try {
-            val obj = org.json.JSONObject(payload)
+            val obj = JSONObject(payload)
             val id = obj.optString("id")
             val ms = obj.optLong("ms", 0L)
             val once = obj.optBoolean("once", false)
