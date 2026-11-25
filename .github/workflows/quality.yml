@@ -136,3 +136,137 @@ jobs:
             conformance-android.md
             app/build/reports/conformance/
           if-no-files-found: warn
+
+  # План 6.1 A3: L0-набор фикстур (одна на каждый зарегистрированный тип).
+  # Матрица из 4 шард: TCG-эмулятор без KVM, ~14 c на фикстуру на seed'ах —
+  # 85 L0 в одном job заняли бы заметно больше 30 минут.
+  conformance-l0:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install NDK and CMake
+        run: |
+          sdkmanager_dir="$ANDROID_HOME/cmdline-tools/latest/bin"
+          [ -x "$sdkmanager_dir/sdkmanager" ] || sdkmanager_dir="$ANDROID_HOME/tools/bin"
+          yes | "$sdkmanager_dir/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fixture list for this shard
+        id: list
+        run: |
+          all=$(ls .conformance/js_widget_runtime/docs/conformance/fixtures | grep '^l0_' | sort)
+          echo "total=$(echo "$all" | wc -l)"
+          filter=$(echo "$all" | awk -v s=${{ matrix.shard }} -v t=4 'NR % t == s' | paste -sd,)
+          count=$(echo "$filter" | tr ',' '\n' | wc -l)
+          echo "fixtures=$count"
+          echo "filter=$filter" >> "$GITHUB_OUTPUT"
+          test -n "$filter" || { echo "empty shard"; exit 1; }
+
+      - name: Build APKs before boot
+        run: |
+          ./gradlew assembleDebug assembleDebugAndroidTest
+          ./gradlew --stop
+
+      - name: Run L0 fixtures on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_I_WANT_MY_TCG: 'yes'
+        with:
+          api-level: 24
+          target: google_apis
+          arch: x86_64
+          disable-animations: false
+          script: |
+            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=${{ steps.list.outputs.filter }}
+            mkdir -p app/build/reports/conformance
+            adb shell ls /sdcard/Android/data/com.test.jsr/files/conformance || true
+            adb pull /sdcard/Android/data/com.test.jsr/files/conformance/. app/build/reports/conformance/ || true
+
+      - name: Collect results
+        run: |
+          ./gradlew connectedConformance
+          expected=$(echo "${{ steps.list.outputs.filter }}" | tr ',' '\n' | wc -l)
+          count=$(ls app/build/reports/conformance/*.result.json 2>/dev/null | wc -l)
+          echo "result.json files: $count (expected $expected)"
+          test "$count" -ge "$expected" || { echo "shard produced fewer results than requested (vacuous pass guard)"; exit 1; }
+
+      - name: Harness compare (shard)
+        run: |
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results app/build/reports/conformance \
+            --out-report conformance-android-l0.md \
+            --out-badge badges/conformance-android-l0.json
+          cat conformance-android-l0.md
+
+      - name: Upload conformance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-android-l0-shard${{ matrix.shard }}
+          path: |
+            conformance-android-l0.md
+            app/build/reports/conformance/
+          if-no-files-found: warn
+
+  # Одна сводная таблица по всем шардам L0 (еvidence для отчёта и wave D).
+  l0-report:
+    runs-on: ubuntu-latest
+    needs: conformance-l0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Merge shard results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: conformance-android-l0-shard*
+          merge-multiple: true
+          path: results/
+
+      - name: Harness compare (all L0)
+        run: |
+          count=$(ls results/**/*.result.json results/*.result.json 2>/dev/null | wc -l)
+          echo "merged result.json files: $count"
+          mkdir -p results-flat
+          find results -name '*.result.json' -exec cp {} results-flat/ \;
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results results-flat \
+            --out-report conformance-android-l0.md \
+            --out-badge badges/conformance-android-l0.json
+          cat conformance-android-l0.md
+
+      - name: Upload merged L0 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-android-l0
+          path: |
+            conformance-android-l0.md
+            badges/conformance-android-l0.json
+            results-flat/
+          if-no-files-found: warn
