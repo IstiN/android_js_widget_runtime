@@ -50,19 +50,21 @@ class Timers(
     override fun schedule(payload: String) {
         val spec = parseTimer(payload) ?: return
         cancel(spec.id)
-        val runnable = object : Runnable {
-            override fun run() {
-                tickInterval(spec.id)
-                if (!spec.once) {
-                    synchronized(timers) { timers[spec.id] = this }
-                    mainHandler.postDelayed(this, spec.ms)
-                } else {
-                    synchronized(timers) { timers.remove(spec.id) }
-                }
-            }
-        }
+        val runnable = TimerRunnable(spec)
         synchronized(timers) { timers[spec.id] = runnable }
         mainHandler.postDelayed(runnable, spec.ms)
+    }
+
+    private inner class TimerRunnable(private val spec: TimerSpec) : Runnable {
+        override fun run() {
+            tickInterval(spec.id)
+            if (!spec.once) {
+                synchronized(timers) { timers[spec.id] = this }
+                mainHandler.postDelayed(this, spec.ms)
+            } else {
+                synchronized(timers) { timers.remove(spec.id) }
+            }
+        }
     }
 
     /** Канал __jsr_clear_interval: raw id; неизвестные id игнорируются. */

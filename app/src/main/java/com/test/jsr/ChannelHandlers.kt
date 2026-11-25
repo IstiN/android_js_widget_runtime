@@ -105,19 +105,6 @@ class ChannelHandlers(
 
     companion object {
         private const val TAG = "ChannelHandlers"
-        internal fun errorValue(message: String): String =
-            "{\"__error\":" + JsStrings.quote(message) + "}"
-
-        /** Исходный JSON-текст значения (optString теряет форму: "dark" -> dark). */
-        internal fun rawJson(obj: JSONObject, key: String): String? {
-            if (obj.isNull(key)) return null
-            return when (val v = obj.get(key)) {
-                is JSONObject -> v.toString()
-                is JSONArray -> v.toString()
-                is String -> JsStrings.quote(v)
-                else -> v.toString()
-            }
-        }
     }
 
     // ---- обработчики: documented payload in, documented payload out ----
@@ -337,4 +324,19 @@ class ChannelHandlers(
 /** Один обработчик канала: documented payload in, documented payload out. */
 private fun interface ChannelHandler {
     fun handle(payload: String)
+}
+
+/** Значение ошибки протокола: {"__error": "<message>"}. */
+internal fun errorValue(message: String): String =
+    "{\"__error\":" + JsStrings.quote(message) + "}"
+
+/** Исходный JSON-текст значения (optString теряет форму: "dark" -> dark). */
+internal fun rawJson(obj: JSONObject, key: String): String? {
+    if (obj.isNull(key)) return null
+    return when (val v = obj.get(key)) {
+        is JSONObject -> v.toString()
+        is JSONArray -> v.toString()
+        is String -> JsStrings.quote(v)
+        else -> v.toString()
+    }
 }

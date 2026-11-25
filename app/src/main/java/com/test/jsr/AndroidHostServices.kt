@@ -53,7 +53,11 @@ class SharedPreferencesStorage(private val prefs: android.content.SharedPreferen
     }
 }
 
-/** EncryptedSharedPreferences (issue #3); value null = удаление. */
+/**
+ * EncryptedSharedPreferences (issue #3); value null = удаление. Класс не
+ * загружается на JVM (AndroidKeystore) — его строки N/A в гейте и 0% —
+ * известный предел (Device-only).
+ */
 class EncryptedSecrets private constructor(private val prefs: android.content.SharedPreferences) : SecretsService {
     override fun get(key: String): String? = prefs.getString(key, null)
     override fun set(key: String, valueJson: String?): Boolean {
@@ -62,7 +66,6 @@ class EncryptedSecrets private constructor(private val prefs: android.content.Sh
         }.apply()
         return true
     }
-
     companion object {
         fun of(context: Context): EncryptedSecrets {
             val masterKey = MasterKey.Builder(context)
