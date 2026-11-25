@@ -22,6 +22,7 @@ class MainActivity : Activity(), HostSinks, NativeRenderer.EventSink {
     private lateinit var runtime: WidgetRuntime
     private lateinit var timers: Timers
     private lateinit var handlers: ChannelHandlers
+    private lateinit var renderer: NativeRenderer
     private lateinit var root: FrameLayout
 
     /** Метка экземпляра движка; __IID помечает исходящие payload (план 1.1). */
@@ -41,6 +42,7 @@ class MainActivity : Activity(), HostSinks, NativeRenderer.EventSink {
         setContentView(buildChrome())
 
         engine = JsWidgetRuntime()
+        renderer = NativeRenderer(this, this, root)
         timers = Timers(engine)
         handlers = ChannelHandlers(
             engine, sinks = this, services = Services(
@@ -101,6 +103,7 @@ class MainActivity : Activity(), HostSinks, NativeRenderer.EventSink {
 
     private fun loadWidget(file: String) {
         root.removeAllViews()
+        renderer.reset()
         // Порядок контракта: runtime-половина, widget-половина, файл виджета
         // (__IID ставит WidgetRuntime.boot первым).
         val runtimeJs = assets.open("jsr/bootstrap-runtime.js").bufferedReader().use { it.readText() }
@@ -130,11 +133,8 @@ class MainActivity : Activity(), HostSinks, NativeRenderer.EventSink {
     override fun onRender(tree: JSONObject) {
         runOnUiThread {
             try {
-                val view = NativeRenderer.build(tree, this, this)
-                root.removeAllViews()
-                root.addView(view, FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT))
+                // issue #2: патчи reconciler'а вместо полной пересборки.
+                renderer.render(JsWidgetTree.normalize(tree))
             } catch (e: Exception) {
                 Log.e(TAG, "render error: $e")
                 showError("render: $e")

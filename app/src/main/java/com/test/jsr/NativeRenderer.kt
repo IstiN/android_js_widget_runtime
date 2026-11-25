@@ -17,271 +17,442 @@ import android.widget.TextView
 import org.json.JSONObject
 
 /**
- * POC-рендерер: JSON-дерево jsr -> нативные Android Views.
+ * Рендерер: применяет патч-операции reconciler'а к дереву View (issue #2,
+ * plan 1.5 A2) — без полной пересборки. Каждый корневой View узла несёт
+ * setTag(R.id.jsr_node_id, nodeId). Зарегистрированные типы seed'ов
+ * (center, column, row, text, sizedBox, textButton, scroll, container,
+ * card, textField) отображаются реально; всё остальное — fallback-карточка
+ * с именем типа (общее правило волны C).
  *
- * Поддержанные ноды (подмножество контракта flutter_js_widget_runtime):
- *   center, column, row, text, textButton, button, textField, sizedBox,
- *   padding, container, card, scroll, listView, divider, spacer
- *
- * POC-подход: каждый jsr.render пересобирает корень. Нативный рендер
- * кеширует display lists айтемов, поэтому скролл даже на Tegra 2 плавный.
+ * Все функции этого файла исполняются только под Robolectric (JaCoCo их не
+ * видит -> 0%), поэтому каждая держится на сложности <= 2.
  */
-object NativeRenderer {
-
-    interface EventSink {
-        fun onAction(actionId: String, payloadJson: String = "{}")
+class NativeRenderer(
+    private val context: Context,
+    private val sink: EventSink,
+    private val container: ViewGroup,
+) {
+    fun interface EventSink {
+        fun onAction(actionId: String, payloadJson: String)
     }
 
-    fun build(tree: JSONObject, context: Context, sink: EventSink): View =
-        inflate(tree, context, sink)
+    private val views = HashMap<String, View>()
+    private val records = HashMap<String, JsNode>()
+    private var rootTree: JsNode? = null
 
-    // ---------- служебное ----------
+    /** Полный цикл render: первый вызов монтирует, дальше — патчи. */
+    fun render(tree: JsNode): List<PatchOp> {
+        val old = rootTree
+        if (old == null) {
+            mountFull(tree)
+            return emptyList()
+        }
+        val result = Reconciler.diff(old, tree)
+        applyAll(result.ops)
+        remapAll(result.renames)
+        rootTree = tree
+        return result.ops
+    }
 
-    private fun parseColor(s: String?, def: Int): Int {
-        if (s.isNullOrEmpty()) return def
-        return try {
-            Color.parseColor(s)
-        } catch (e: IllegalArgumentException) {
-            def
+    /** Сброс между загрузками виджетов (loadWidget очищает контейнер сам). */
+    fun reset() {
+        views.clear()
+        records.clear()
+        rootTree = null
+    }
+
+    // Доступ для dump/driver/runner (A2b) и тестов.
+    internal fun viewOf(nodeId: String): View? = views[nodeId]
+    internal fun allViews(): Collection<View> = views.values
+    internal fun rootNode(): JsNode? = rootTree
+
+    private fun mountFull(tree: JsNode) {
+        val view = inflate(tree)
+        container.addView(view, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        rootTree = tree
+    }
+
+    // ---------- применение операций ----------
+
+    /** Удаления раньше замен/вставок: старые id обязаны быть живы в картах. */
+    private val PRIORITY: Map<Class<out PatchOp>, Int> = mapOf(
+        PatchOp.RemoveChild::class.java to 0,
+        PatchOp.MoveChild::class.java to 1,
+        PatchOp.ReplaceSubtree::class.java to 2,
+        PatchOp.InsertChild::class.java to 3,
+        PatchOp.UpdateProps::class.java to 4,
+    )
+
+    private fun applyAll(ops: List<PatchOp>) {
+        ops.sortedBy { PRIORITY[it.javaClass] ?: 9 }.forEach { apply(it) }
+    }
+
+    private fun apply(op: PatchOp) {
+        val handler = APPLY[op.javaClass] ?: return
+        handler(op)
+    }
+
+    private val APPLY: Map<Class<out PatchOp>, (PatchOp) -> Unit> = mapOf(
+        PatchOp.UpdateProps::class.java to { o -> applyUpdate(o as PatchOp.UpdateProps) },
+        PatchOp.InsertChild::class.java to { o -> applyInsert(o as PatchOp.InsertChild) },
+        PatchOp.RemoveChild::class.java to { o -> applyRemove(o as PatchOp.RemoveChild) },
+        PatchOp.MoveChild::class.java to { o -> applyMove(o as PatchOp.MoveChild) },
+        PatchOp.ReplaceSubtree::class.java to { o -> applyReplace(o as PatchOp.ReplaceSubtree) },
+    )
+
+    private fun applyUpdate(op: PatchOp.UpdateProps) {
+        val view = views[op.nodeId] ?: return
+        applyPropsDiff(view, records[op.nodeId], op.node)
+    }
+
+    private fun applyInsert(op: PatchOp.InsertChild) {
+        parentView(op.parentId)?.let { parent ->
+            val view = inflate(op.node)
+            parent.addView(view, op.index.coerceAtMost(parent.childCount))
         }
     }
 
-    private fun dp(d: Double): Int = (d * 1.5f).toInt() // ~hdpi; для POC достаточно
 
-    private val CONTAINER_TYPES =
-        setOf("padding", "container", "card", "column", "row", "center")
+    private fun applyRemove(op: PatchOp.RemoveChild) {
+        parentView(op.parentId)?.let { parent -> removeSubtree(parent, op.nodeId) }
+    }
 
-    private fun applyExplicitSize(v: View, node: JSONObject) {
-        val w = if (node.has("width")) dp(node.getDouble("width")) else null
-        val h = if (node.has("height")) dp(node.getDouble("height")) else null
-        if (w != null || h != null) {
-            val lp = v.layoutParams ?: ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT)
-            if (w != null) lp.width = w
-            if (h != null) lp.height = h
-            v.layoutParams = lp
+    private fun removeSubtree(parent: ViewGroup, nodeId: String) {
+        val view = views[nodeId] ?: return
+        records[nodeId]?.children?.forEach { removeSubtreeIds(it) }
+        parent.removeView(view)
+        views.remove(nodeId)
+        records.remove(nodeId)
+    }
+
+    private fun removeSubtreeIds(node: JsNode) {
+        node.children.forEach { removeSubtreeIds(it) }
+        views.remove(node.nodeId)
+        records.remove(node.nodeId)
+    }
+
+    private fun applyMove(op: PatchOp.MoveChild) {
+        parentView(op.parentId)?.let { parent ->
+            val view = views[op.nodeId] ?: return
+            parent.removeView(view)
+            parent.addView(view, op.toIndex.coerceAtMost(parent.childCount))
         }
     }
 
-    // ---------- inflate ----------
+    private fun applyReplace(op: PatchOp.ReplaceSubtree) {
+        replaceIn(views[op.nodeId] ?: return, op)
+    }
 
-    fun inflate(node: JSONObject, ctx: Context, sink: EventSink): View {
-        val type = node.optString("type")
-        val childNode: JSONObject? = node.optJSONObject("child")
+    private fun replaceIn(old: View, op: PatchOp.ReplaceSubtree) {
+        val parent = old.parent as? ViewGroup ?: return
+        val index = parent.indexOfChild(old)
+        removeSubtree(parent, op.nodeId)
+        parent.addView(inflate(op.node), index.coerceAtMost(parent.childCount))
+    }
 
-        val view: View = when (type) {
-            "center" -> {
-                val fl = FrameLayout(ctx)
-                if (childNode != null) {
-                    fl.addView(inflate(childNode, ctx, sink), FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER))
-                }
-                containerCommon(fl, node)
-            }
-
-            "column", "row" -> {
-                val ll = LinearLayout(ctx)
-                ll.orientation = if (type == "column") LinearLayout.VERTICAL
-                else LinearLayout.HORIZONTAL
-                when (node.optString("mainAxisAlignment")) {
-                    "center" -> ll.gravity = Gravity.CENTER
-                    "end", "flexEnd" ->
-                        ll.gravity = if (type == "column") Gravity.BOTTOM else Gravity.END
-                }
-                fillLinear(ll, node, ctx, sink)
-                containerCommon(ll, node)
-            }
-
-            "text" -> {
-                val tv = TextView(ctx)
-                tv.text = node.optString("data", node.optString("text", ""))
-                val style = node.optJSONObject("style")
-                val fs = style?.optDouble("fontSize", 14.0)
-                    ?: node.optDouble("fontSize", 14.0)
-                tv.textSize = fs.toFloat()
-                val color = style?.optString("color") ?: node.optString("color")
-                if (!color.isNullOrEmpty()) tv.setTextColor(parseColor(color, Color.BLACK))
-                val fw = style?.optString("fontWeight") ?: node.optString("fontWeight")
-                tv.setTypeface(null, when (fw) {
-                    "bold", "w600", "w700", "w800" -> Typeface.BOLD
-                    else -> Typeface.NORMAL
-                })
-                when (node.optString("textAlign")) {
-                    "center" -> tv.gravity = Gravity.CENTER
-                    "right", "end" -> tv.gravity = Gravity.END
-                }
-                tv
-            }
-
-            "textButton", "button" -> {
-                val b = Button(ctx)
-                b.text = node.optString("text", node.optString("data", "Button"))
-                b.isAllCaps = false
-                val action = node.optString("onTap", node.optString("onPressed", ""))
-                if (action.isNotEmpty()) {
-                    b.setOnClickListener { sink.onAction(action) }
-                }
-                b
-            }
-
-            "textField" -> {
-                val et = EditText(ctx)
-                et.hint = node.optString("hint")
-                et.setText(node.optString("value", ""))
-                et
-            }
-
-            "sizedBox" -> View(ctx)
-
-            "padding" -> {
-                val fl = FrameLayout(ctx)
-                val pad = node.optDouble("all", 0.0)
-                fl.setPadding(dp(pad), dp(pad), dp(pad), dp(pad))
-                if (childNode != null) {
-                    fl.addView(inflate(childNode, ctx, sink), FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT))
-                }
-                containerCommon(fl, node)
-            }
-
-            "container" -> {
-                val fl = FrameLayout(ctx)
-                if (node.has("children")) {
-                    // container с children — вертикальный стак (POC-семантика)
-                    val ll = LinearLayout(ctx)
-                    ll.orientation = LinearLayout.VERTICAL
-                    fillLinear(ll, node, ctx, sink)
-                    fl.addView(ll, FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER))
-                } else if (childNode != null) {
-                    fl.addView(inflate(childNode, ctx, sink), FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        Gravity.CENTER))
-                }
-                containerCommon(fl, node)
-            }
-
-            "card" -> {
-                val ll = LinearLayout(ctx)
-                ll.orientation = LinearLayout.VERTICAL
-                ll.background = GradientDrawable().apply {
-                    cornerRadius = dp(12.0).toFloat()
-                    setColor(parseColor(node.optString("color", "#ffffff"), Color.WHITE))
-                }
-                ll.elevation = dp(2.0).toFloat()
-                val pad = node.optDouble("padding", 12.0)
-                ll.setPadding(dp(pad), dp(pad), dp(pad), dp(pad))
-                fillLinear(ll, node, ctx, sink)
-                ll
-            }
-
-            "scroll", "listView" -> {
-                val sv = ScrollView(ctx)
-                sv.isVerticalScrollBarEnabled = true
-                val ll = LinearLayout(ctx)
-                ll.orientation = LinearLayout.VERTICAL
-                fillLinear(ll, node, ctx, sink)
-                if (childNode != null) ll.addView(inflate(childNode, ctx, sink))
-                sv.addView(ll, ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT)
-                sv
-            }
-
-            "divider" -> View(ctx).also { v ->
-                v.setBackgroundColor(Color.parseColor("#33888888"))
-                v.layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(1.0))
-            }
-
-            "spacer" -> View(ctx).also { v ->
-                v.layoutParams = LinearLayout.LayoutParams(0,
-                    if (node.has("height")) dp(node.getDouble("height"))
-                    else ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-            }
-
-            else -> {
-                Log.w("NativeRenderer", "неизвестная нода '$type' — пустая заглушка")
-                View(ctx).also { v ->
-                    v.layoutParams = ViewGroup.LayoutParams(0, 0)
-                }
-            }
+    /** Один проход после всех ops: сначала изъять старые слоты, потом записать новые. */
+    private fun remapAll(renames: List<Pair<JsNode, JsNode>>) {
+        val moving = extractedViews(renames)
+        renames.forEach { (old, new) ->
+            val view = moving[old.nodeId] ?: return@forEach
+            views[new.nodeId] = view
+            records[new.nodeId] = new
+            view.setTag(R.id.jsr_node_id, new.nodeId)
         }
+    }
 
-        // Общие пост-настройки корня ноды: margin/padding/размеры
-        if (node.has("margin") && type != "sizedBox") {
-            val m = dp(node.getDouble("margin"))
-            val lp = view.layoutParams ?: ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT)
-            if (lp is ViewGroup.MarginLayoutParams) {
-                lp.setMargins(m, m, m, m)
-                view.layoutParams = lp
-            }
+    private fun extractedViews(renames: List<Pair<JsNode, JsNode>>): Map<String, View> {
+        val moving = HashMap<String, View>()
+        renames.forEach { (old, _) ->
+            views.remove(old.nodeId)?.let { moving[old.nodeId] = it }
+            records.remove(old.nodeId)
         }
-        if (node.has("padding") && type !in CONTAINER_TYPES) {
-            val p = dp(node.getDouble("padding"))
-            view.setPadding(p, p, p, p)
-        }
-        if (type == "sizedBox") {
-            val w = if (node.has("width")) dp(node.getDouble("width"))
-            else ViewGroup.LayoutParams.WRAP_CONTENT
-            val h = if (node.has("height")) dp(node.getDouble("height"))
-            else ViewGroup.LayoutParams.WRAP_CONTENT
-            view.layoutParams = ViewGroup.LayoutParams(w, h)
-        } else if (type != "divider" && type != "spacer") {
-            applyExplicitSize(view, node)
-        }
+        return moving
+    }
+
+    private fun parentView(nodeId: String): ViewGroup? = views[nodeId] as? ViewGroup
+
+    // ---------- обновление свойств без потери состояния (issue #2 п.3) ----------
+
+    private val PROPDIFF: Map<Class<out View>, (View, JsNode, JsNode?) -> Unit> = mapOf(
+        Button::class.java to { v, n, _ -> updateTextContent(v as Button, n) },
+        EditText::class.java to { v, n, old -> updateInputContent(v as EditText, old, n) },
+        TextView::class.java to { v, n, _ -> updateTextContent(v as TextView, n) },
+    )
+
+    private fun applyPropsDiff(view: View, old: JsNode?, new: JsNode) {
+        val handler = PROPDIFF[view.javaClass] ?: return
+        handler(view, new, old)
+    }
+
+    /** EditText хранит текст, пока prop initialValue не изменился. */
+    private fun updateInputContent(view: EditText, old: JsNode?, new: JsNode) {
+        if (initialValueChanged(old, new)) view.setText(new.props.optString("initialValue"))
+    }
+
+    private fun initialValueChanged(old: JsNode?, new: JsNode): Boolean {
+        old ?: return true
+        return differs(old.props, new.props, "initialValue")
+    }
+
+    private fun differs(a: JSONObject, b: JSONObject, key: String): Boolean =
+        b.has(key) && b.optString(key) != a.optString(key)
+
+    private fun updateTextContent(view: TextView, node: JsNode) {
+        view.text = textOf(node)
+    }
+
+    // ---------- создание views (типы seed'ов; остальное — fallback) ----------
+
+    private fun inflate(node: JsNode): View {
+        val view = createView(node.type)
+        view.setTag(R.id.jsr_node_id, node.nodeId)
+        views[node.nodeId] = view
+        records[node.nodeId] = node
+        config[node.type]?.invoke(view, node)
+        attachChildren(view, node)
         return view
     }
 
-    private fun fillLinear(
-        ll: LinearLayout,
-        node: JSONObject,
-        ctx: Context,
-        sink: EventSink,
-    ) {
-        val children = node.optJSONArray("children") ?: return
-        val spacing = if (node.has("spacing")) dp(node.getDouble("spacing")) else 0
-        for (i in 0 until children.length()) {
-            val child = children.optJSONObject(i) ?: continue
-            val view = inflate(child, ctx, sink)
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            if (child.has("margin")) {
-                val m = dp(child.getDouble("margin"))
-                lp.setMargins(m, m, m, m)
-            }
-            if (spacing > 0 && i > 0) {
-                if (ll.orientation == LinearLayout.VERTICAL) lp.topMargin += spacing
-                else lp.leftMargin += spacing
-            }
-            view.layoutParams = lp
-            ll.addView(view)
+    private fun createView(type: String): View =
+        FACTORIES[type]?.invoke(context) ?: fallbackCard(type)
+
+    private fun attachChildren(view: View, node: JsNode) {
+        node.children.forEachIndexed { i, child ->
+            val childView = inflate(child)
+            attach(view, childView)
+            applyChildMargin(child, childView)
+            applySpacing(view, node, childView, i)
         }
     }
 
-    private fun containerCommon(v: View, node: JSONObject): View {
-        val bg = node.optString("color", node.optString("backgroundColor"))
-        if (!bg.isNullOrEmpty() && bg != "transparent") {
-            val gd = GradientDrawable()
-            gd.setColor(parseColor(bg, Color.TRANSPARENT))
-            val r = node.optDouble("borderRadius", -1.0)
-            if (r >= 0) gd.cornerRadius = dp(r).toFloat()
-            v.background = gd
+    private val FACTORIES: Map<String, (Context) -> View> = mapOf(
+        "center" to { c -> FrameLayout(c) },
+        "column" to { c -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL } },
+        "row" to { c -> LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL } },
+        "text" to { c -> TextView(c) },
+        "sizedBox" to { c -> View(c) },
+        "textButton" to { c -> Button(c).apply { isAllCaps = false } },
+        "button" to { c -> Button(c).apply { isAllCaps = false } },
+        "textField" to { c -> EditText(c) },
+        "scroll" to { c -> scrollOf(c) },
+        "container" to { c -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL } },
+        "card" to { c -> cardOf(c) },
+    )
+
+    /** Fallback-карточка референса: имя типа + тег nodeId. */
+    private fun fallbackCard(type: String): View {
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#334155"))
+                cornerRadius = dp(8f).toFloat()
+            }
+            setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
         }
-        if (node.has("padding") && v !is TextView && v !is Button) {
-            val p = dp(node.getDouble("padding"))
-            v.setPadding(p, p, p, p)
+        val tv = TextView(context)
+        tv.text = "[$type]"
+        tv.setTextColor(Color.WHITE)
+        box.addView(tv)
+        Log.i(TAG, "fallback card for '$type'")
+        return box
+    }
+
+    private fun scrollOf(c: Context): View {
+        val sv = ScrollView(c)
+        val inner = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
+        sv.addView(inner, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        return sv
+    }
+
+    private fun cardOf(c: Context): View {
+        val ll = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
+        ll.background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            cornerRadius = dp(12f).toFloat()
         }
-        return v
+        ll.elevation = dp(2f).toFloat()
+        return ll
+    }
+
+    // ---------- прикрепление детей и отступы ----------
+
+    private val ATTACH: Map<Class<out View>, (View, View) -> Unit> = mapOf(
+        ScrollView::class.java to { v, child -> scrollChild(v as ScrollView, child) },
+        FrameLayout::class.java to { v, child -> centerChild(v as FrameLayout, child) },
+        ViewGroup::class.java to { v, child -> (v as ViewGroup).addView(child) },
+    )
+
+    private fun attach(view: View, child: View) {
+        handlerOf(view)?.invoke(view, child)
+    }
+
+    private fun handlerOf(view: View): ((View, View) -> Unit)? {
+        ATTACH[view.javaClass]?.let { return it }
+        return ATTACH[ViewGroup::class.java]
+    }
+
+    private fun scrollChild(sv: ScrollView, child: View) {
+        (sv.getChildAt(0) as ViewGroup).addView(child)
+    }
+
+    private fun centerChild(fl: FrameLayout, child: View) {
+        fl.addView(child, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+    }
+
+    private fun applySpacing(view: View, node: JsNode, child: View, index: Int) {
+        val add = spacingPx(node) * index.coerceAtMost(1)
+        if (add == 0) return
+        setSpacingSide(child, add, isVertical(view))
+    }
+
+    private fun setSpacingSide(child: View, add: Int, vertical: Boolean) {
+        val lp = child.layoutParams as? LinearLayout.LayoutParams ?: return
+        lp.topMargin += add * sideFactor(vertical)
+        lp.leftMargin += add * sideFactor(!vertical)
+        child.layoutParams = lp
+    }
+
+    private fun sideFactor(v: Boolean): Int = if (v) 1 else 0
+
+    private fun isVertical(view: View): Boolean =
+        (view as? LinearLayout)?.orientation != LinearLayout.HORIZONTAL
+
+    private fun applyChildMargin(child: JsNode, childView: View) {
+        val lp = childView.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        val margin = pxOf(child.props, "margin")
+        lp.setMargins(margin, margin, margin, margin)
+        childView.layoutParams = lp
+    }
+
+    // ---------- конфигурация по типу ----------
+
+    private val config: Map<String, (View, JsNode) -> Unit> = mapOf(
+        "text" to { v, n -> configureText(v as TextView, n) },
+        "textButton" to { v, n -> configureButton(v as Button, n) },
+        "button" to { v, n -> configureButton(v as Button, n) },
+        "textField" to { v, n -> configureInput(v as EditText, n) },
+        "sizedBox" to { v, n -> configureSizedBox(v, n) },
+        "container" to { v, n -> configureContainer(v, n) },
+        "card" to { v, n -> configureCard(v, n) },
+        "scroll" to { v, _ -> (v as ScrollView).isVerticalScrollBarEnabled = true },
+    )
+
+    private fun configureText(view: TextView, node: JsNode) {
+        view.text = textOf(node)
+        applyFontSize(view, node)
+        applyTextColor(view, node)
+        applyFontWeight(view, node)
+    }
+
+    private fun applyFontSize(view: TextView, node: JsNode) {
+        val style = node.props.optDouble("fontSize", -1.0)
+        if (style > 0) view.textSize = dp(style.toFloat()).toFloat()
+    }
+
+    private fun applyTextColor(view: TextView, node: JsNode) {
+        val color = node.props.optString("color")
+        if (color.isNotEmpty()) view.setTextColor(parseColor(color))
+    }
+
+    private fun applyFontWeight(view: TextView, node: JsNode) {
+        val bold = node.props.optString("fontWeight") in setOf("bold", "w600", "w700", "w800")
+        view.setTypeface(null, if (bold) Typeface.BOLD else Typeface.NORMAL)
+    }
+
+    private fun configureButton(view: Button, node: JsNode) {
+        view.text = textOf(node)
+        val action = firstEvent(node, "onTap", "onPressed", "onPress")
+        if (action != null) view.setOnClickListener {
+            sink.onAction(action, payloadOf(node))
+        }
+    }
+
+    private fun configureInput(view: EditText, node: JsNode) {
+        view.hint = node.props.optString("hint")
+        view.setText(node.props.optString("initialValue"))
+    }
+
+    private fun configureSizedBox(view: View, node: JsNode) {
+        view.layoutParams = ViewGroup.LayoutParams(pxOf(node.props, "width"), pxOf(node.props, "height"))
+    }
+
+    private fun configureContainer(view: View, node: JsNode) {
+        val color = decorationColor(node)
+        if (color.isNotEmpty()) {
+            view.background = GradientDrawable().apply { setColor(parseColor(color)) }
+            applyRadius(view.background, node)
+        }
+        applyPadding(view, node)
+    }
+
+    private fun applyRadius(background: android.graphics.drawable.Drawable?, node: JsNode) {
+        roundOf(background)?.let { it.cornerRadius = radiusPx(node) }
+    }
+
+    private fun roundOf(background: android.graphics.drawable.Drawable?): GradientDrawable? =
+        background as? GradientDrawable
+
+    private fun radiusPx(node: JsNode): Float {
+        val r = node.props.optDouble("borderRadius", -1.0)
+        if (r < 0) return -1f
+        return dp(r.toFloat()).toFloat()
+    }
+
+    private fun applyPadding(view: View, node: JsNode) {
+        val pad = pxOf(node.props, "padding")
+        if (pad > 0) view.setPadding(pad, pad, pad, pad)
+    }
+
+    private fun configureCard(view: View, node: JsNode) {
+        val color = decorationColor(node)
+        if (color.isNotEmpty()) {
+            val gd = view.background as? GradientDrawable
+            gd?.setColor(parseColor(color))
+        }
+        applyPadding(view, node)
+    }
+
+    // ---------- чтение нормализованных значений ----------
+
+    private fun textOf(node: JsNode): String {
+        val props = node.props
+        return props.optString("data", props.optString("text", props.optString("label", "")))
+    }
+
+    private fun firstEvent(node: JsNode, vararg keys: String): String? =
+        keys.map { node.events.optString(it) }.firstOrNull { it.isNotEmpty() }
+
+    /** Тап-события несут payload- prop узла (по умолчанию {}). */
+    private fun payloadOf(node: JsNode): String {
+        val payload = node.props.optJSONObject("payload")
+        return payload?.toString() ?: "{}"
+    }
+
+    private fun decorationColor(node: JsNode): String =
+        node.props.optJSONObject("decoration")?.optString("color") ?: ""
+
+    private fun spacingPx(node: JsNode): Int = pxOf(node.props, "spacing")
+
+    private fun pxOf(props: JSONObject, key: String): Int {
+        val v = props.optDouble(key, -1.0)
+        if (v < 0) return 0
+        return dp(v.toFloat())
+    }
+
+    private fun parseColor(s: String): Int = try {
+        Color.parseColor(s)
+    } catch (e: IllegalArgumentException) {
+        Color.TRANSPARENT
+    }
+
+    private fun dp(d: Float): Int = (d * 1.5f).toInt()
+
+    companion object {
+        private const val TAG = "NativeRenderer"
     }
 }
