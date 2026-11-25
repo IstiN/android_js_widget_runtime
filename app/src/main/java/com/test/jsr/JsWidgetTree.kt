@@ -17,12 +17,27 @@ class JsNode(
     val children: List<JsNode>,
     val nodeId: String,
     val key: String? = null,
+    /** Raw (pre-alias) props of the payload; the dump union (plan 1.3). */
+    val rawProps: JSONObject? = null,
 ) {
+    /**
+     * Dump props: the applied (normalized) record unioned with the raw
+     * payload props. The union keeps both vocabularies: seeds expect the
+     * aliased `data`, while L0 delta paths assert raw names (`button.text`,
+     * `container.color`); compare only checks expected keys, so the extra
+     * vocabulary is harmless.
+     */
+    fun dumpProps(): JSONObject {
+        val out = JSONObject(props.toString())
+        rawProps?.keys()?.forEach { k -> if (!out.has(k)) out.put(k, rawProps.get(k)) }
+        return out
+    }
+
     /** Форма dump: {type, props, children, events, nodeId}. */
     fun toJson(): JSONObject {
         val out = JSONObject()
         out.put("type", type)
-        out.put("props", JSONObject(props.toString()))
+        out.put("props", dumpProps())
         out.put("children", JSONArray(children.map { it.toJson() }))
         out.put("events", JSONObject(events.toString()))
         out.put("nodeId", nodeId)
@@ -49,18 +64,34 @@ object JsWidgetTree {
     private fun assignIds(node: JsNode, counter: IntArray): JsNode {
         val id = "n" + counter[0]++
         val children = node.children.map { assignIds(it, counter) }
-        return JsNode(node.type, node.props, node.events, children, id, node.key)
+        return JsNode(node.type, node.props, node.events, children, id, node.key, node.rawProps)
     }
 
     // ---------- правило 1..3: рабочая карта, алиасы, разбор ----------
 
     private fun buildNode(node: JSONObject): JsNode {
         val working = workingOf(node)
+        // Снимок ДО полевых алиасов (они мутируют working): raw-словарь дампа.
+        val rawProps = rawPropsOf(working, node)
         val type = applyFieldAliases(resolveTypeAlias(working.optString("type")), working)
         val (props, events) = splitProps(node, working)
         val children = rawChildren(working).map { toChild(it) } // правило 3
         val key = (working.opt("key") as? String)
-        return JsNode(type, props, events, children, "", key)
+        return JsNode(type, props, events, children, "", key, rawProps)
+    }
+
+    /** Raw-props словарь узла: ключи payload, значения по правилу 6 (colors/sizes). */
+    private fun rawPropsOf(working: JSONObject, node: JSONObject): JSONObject {
+        val raw = JSONObject()
+        working.keys().forEach { k ->
+            if (k in STRUCTURAL || k == "events") return@forEach
+            if (k.matches(Regex("on[A-Z].*")) && working.opt(k) is String) return@forEach
+            raw.put(k, normalizePropValue(k, working.get(k)))
+        }
+        node.optJSONObject("style")?.let { style -> // правило 1: ключи узла старше
+            style.keys().forEach { k -> if (!raw.has(k)) raw.put(k, normalizePropValue(k, style.get(k))) }
+        }
+        return raw
     }
 
     /** props объединяются с верхним уровнем узла (ключи узла старше). */

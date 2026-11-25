@@ -270,7 +270,7 @@
     "status": "partial"
   },
   {
-    "reason": "fallback",
+    "reason": "reference parity",
     "type": "popupMenu",
     "status": "partial"
   },
@@ -341,7 +341,7 @@
     "status": "yes"
   },
   {
-    "reason": "fallback",
+    "reason": "reference parity",
     "type": "tabBar",
     "status": "partial"
   },

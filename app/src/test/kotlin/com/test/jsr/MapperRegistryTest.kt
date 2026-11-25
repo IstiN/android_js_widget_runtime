@@ -33,7 +33,7 @@ class MapperRegistryTest {
             if (status == "partial") {
                 assertTrue(
                     "bad reason for $type",
-                    reason == "host contract" || reason == "fallback",
+                    reason == "host contract" || reason == "fallback" || reason == "reference parity",
                 )
             }
             if (type in HostContractMapper.types) {
@@ -69,6 +69,14 @@ class MapperRegistryTest {
             NodeMapperRegistry.statusOf("webView"),
         )
         assertEquals("partial" to "fallback", NodeMapperRegistry.statusOf("align"))
+        assertEquals(
+            "partial" to "reference parity",
+            NodeMapperRegistry.statusOf("popupMenu"),
+        )
+        assertEquals(
+            "partial" to "reference parity",
+            NodeMapperRegistry.statusOf("tabBar"),
+        )
     }
 
     // ---------- NodeProps (pure) ----------
@@ -81,6 +89,22 @@ class MapperRegistryTest {
         assertEquals("t", NodeProps.textOf(props("""{"text":"t","label":"l"}""")))
         assertEquals("l", NodeProps.textOf(props("""{"label":"l"}""")))
         assertEquals("", NodeProps.textOf(props("{}")))
+    }
+
+    @Test
+    fun `transformText applies the reference text transform`() {
+        assertEquals("ABC", NodeProps.transformText(props("""{"data":"abc","textTransform":"uppercase"}""")))
+        assertEquals("abc", NodeProps.transformText(props("""{"data":"ABC","textTransform":"lowercase"}""")))
+        assertEquals("Abc", NodeProps.transformText(props("""{"data":"abc","textTransform":"capitalize"}""")))
+        assertEquals("abc", NodeProps.transformText(props("""{"data":"abc","textTransform":"none"}""")))
+        assertEquals("abc", NodeProps.transformText(props("""{"data":"abc"}""")))
+    }
+
+    @Test
+    fun `firstTab reads the first label of the tabs prop`() {
+        assertEquals("One", NodeProps.firstTab(props("""{"tabs":["One","Two"]}""")))
+        assertEquals("", NodeProps.firstTab(props("""{"tabs":[]}""")))
+        assertEquals("", NodeProps.firstTab(props("{}")))
     }
 
     @Test

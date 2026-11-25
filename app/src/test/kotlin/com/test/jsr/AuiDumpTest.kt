@@ -1,15 +1,16 @@
 package com.test.jsr
 
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Равенство dump с нормализатором обвязки пина (harness/normalize.mjs). */
 class AuiDumpTest {
 
-    /** normalizeTree(hello renders[0]) обвязки пина — вычислено node на пине. */
+    /** normalizeTree(hello renders[0]) обвязки пина + raw-ключи union-дампа. */
     private val harnessHello =
-        """{"type":"center","props":{},"events":{},"children":[{"type":"column","props":{"mainAxisSize":"min","spacing":12},"events":{},"children":[{"type":"text","props":{"data":"Hello from JS!","fontSize":24,"fontWeight":"bold","color":"#F1F5F9"},"events":{},"children":[],"nodeId":"n2"},{"type":"sizedBox","props":{"height":12},"events":{},"children":[],"nodeId":"n3"},{"type":"textButton","props":{"data":"Tap me"},"events":{"onTap":"tap"},"children":[],"nodeId":"n4"}],"nodeId":"n1"}],"nodeId":"n0"}"""
+        """{"type":"center","props":{},"events":{},"children":[{"type":"column","props":{"mainAxisSize":"min","spacing":12},"events":{},"children":[{"type":"text","props":{"data":"Hello from JS!","fontSize":24,"fontWeight":"bold","color":"#F1F5F9"},"events":{},"children":[],"nodeId":"n2"},{"type":"sizedBox","props":{"height":12},"events":{},"children":[],"nodeId":"n3"},{"type":"textButton","props":{"data":"Tap me","text":"Tap me"},"events":{"onTap":"tap"},"children":[],"nodeId":"n4"}],"nodeId":"n1"}],"nodeId":"n0"}"""
 
     @Test
     fun `dump of the hello sample equals the harness normalizer output`() {
@@ -26,6 +27,31 @@ class AuiDumpTest {
         assertTrue(
             "dump differs from harness normalizeTree",
             jsonEquals(dump, JSONObject(harnessHello)),
+        )
+    }
+
+    @Test
+    fun `dump keeps the raw vocabulary next to the aliases`() {
+        // l0_button / l0_container class: the delta paths assert raw names
+        // (button.text, container.color) while the record holds the aliased
+        // data/decoration; the dump union carries both (plan 1.3).
+        val tree = JsWidgetTree.normalize(
+            JSONObject(
+                """{"type":"column","children":[
+                   {"type":"button","text":"L0"},
+                   {"type":"container","color":"#1e293b","child":{"type":"text","data":"x"}}]}""",
+            ),
+        )
+        val button = tree.children[0]
+        assertEquals(
+            setOf("data", "text"),
+            button.dumpProps().keys().asSequence().toSet(),
+        )
+        val container = tree.children[1]
+        assertEquals("#1E293B", container.dumpProps().optString("color"))
+        assertEquals(
+            "#1E293B",
+            container.dumpProps().optJSONObject("decoration")?.optString("color"),
         )
     }
 

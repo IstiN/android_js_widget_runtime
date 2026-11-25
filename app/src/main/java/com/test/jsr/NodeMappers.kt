@@ -123,7 +123,7 @@ internal object TextMapper : NodeMapper {
     override val configure = mapOf(
         "text" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
             val tv = v as TextView
-            tv.text = NodeProps.textOf(n.props)
+            tv.text = NodeProps.transformText(n.props)
             val style = n.props.optDouble("fontSize", -1.0)
             if (style > 0) tv.textSize = NodeProps.dp(style.toFloat()).toFloat()
             val color = n.props.optString("color")
@@ -269,6 +269,8 @@ internal object MaterialMapper : NodeMapper {
     override val factories = mapOf(
         "appBar" to { c: Context -> bar(c) },
         "banner" to { c: Context -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL; addView(TextView(c)) } },
+        "popupMenu" to { c: Context -> TextView(c) },
+        "tabBar" to { c: Context -> TextView(c) },
     )
 
     override val configure = mapOf(
@@ -282,7 +284,23 @@ internal object MaterialMapper : NodeMapper {
             val color = n.props.optString("backgroundColor")
             if (color.isNotEmpty()) v.setBackgroundColor(parseColor(color))
         },
+        // Reference parity (flutter_js_widget_runtime#15, fixture l0_popup_menu):
+        // the reference drops documented items and injects the default message;
+        // the observed dump shape is kept until the reference is fixed.
+        "popupMenu" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+            (v as TextView).text = NodeProps.textOf(n.props).ifEmpty { DEFAULT_POPUP_MESSAGE }
+            if (n.props.optString("message").isEmpty()) n.props.put("message", DEFAULT_POPUP_MESSAGE)
+        },
+        // Reference parity (fixture l0_tab_bar): the dump live-reads the first
+        // tab label as a dump-only data prop (tabBar has no scalar documented prop).
+        "tabBar" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+            val first = NodeProps.firstTab(n.props)
+            (v as TextView).text = first
+            if (n.props.optString("data").isEmpty()) n.props.put("data", first)
+        },
     )
+
+    private const val DEFAULT_POPUP_MESSAGE = "Show menu"
 }
 
 internal object EffectsMapper : NodeMapper {
@@ -349,10 +367,14 @@ internal object NodeMapperRegistry {
     val configure: Map<String, (View, JsNode, NativeRenderer.EventSink) -> Unit> =
         mappers.flatMap { it.configure.toList() }.toMap()
 
+    /** Mapped views that only reproduce the reference's observed dump shape. */
+    private val REFERENCE_PARITY = setOf("popupMenu", "tabBar")
+
     /** Support row of a node type: yes | partial with reason (plan 6.1 A3). */
     fun statusOf(type: String): Pair<String, String?> = when {
         // Host-contract types have factories too; the contract wins the row.
         type in HostContractMapper.types -> "partial" to "host contract"
+        type in REFERENCE_PARITY -> "partial" to "reference parity"
         factories.containsKey(type) -> "yes" to null
         else -> "partial" to "fallback"
     }

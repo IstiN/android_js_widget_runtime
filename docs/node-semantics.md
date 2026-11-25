@@ -1266,7 +1266,7 @@ a host surface fills the slot; `partial` (fallback) = reference fallback card.
 ## `popupMenu`
 
 - Category: Material 3 nodes
-- Android status: **partial** (fallback)
+- Android status: **partial** (reference parity)
 - Android view: fallback card [type] with the node id tag
 
 | Prop | Flutter | Android | Difference |
@@ -1598,7 +1598,7 @@ a host surface fills the slot; `partial` (fallback) = reference fallback card.
 ## `tabBar`
 
 - Category: Material 3 nodes
-- Android status: **partial** (fallback)
+- Android status: **partial** (reference parity)
 - Android view: fallback card [type] with the node id tag
 
 | Prop | Flutter | Android | Difference |

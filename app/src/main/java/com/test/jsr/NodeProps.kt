@@ -12,6 +12,23 @@ internal object NodeProps {
     fun textOf(props: JSONObject): String =
         props.optString("data", props.optString("text", props.optString("label", "")))
 
+    /** textTransform of the reference: the renderer transforms before building the Text. */
+    fun transformText(props: JSONObject): String {
+        val text = textOf(props)
+        return when (props.optString("textTransform")) {
+            "uppercase" -> text.uppercase()
+            "lowercase" -> text.lowercase()
+            "capitalize" -> text.replaceFirstChar { it.uppercase() }
+            else -> text
+        }
+    }
+
+    /** First label of a tabBar tabs prop (reference: live-read first tab). */
+    fun firstTab(props: JSONObject): String {
+        val tabs = props.optJSONArray("tabs") ?: return ""
+        return tabs.optString(0)
+    }
+
     /** First present event key. */
     fun firstEvent(events: JSONObject, vararg keys: String): String? =
         keys.map { events.optString(it) }.firstOrNull { it.isNotEmpty() }

@@ -17,7 +17,9 @@ object AuiDump {
     fun dump(node: JsNode, viewOf: (String) -> View?): JSONObject {
         val out = JSONObject()
         out.put("type", node.type)
-        val props = JSONObject(node.props.toString())
+        // Union-словарь (record + raw): delta-пути L0 assert raw имена
+        // (button.text, container.color), seeds — алиасный data.
+        val props = node.dumpProps()
         viewOf(node.nodeId)?.let { readLiveText(it, props) }
         out.put("props", props)
         out.put("children", JSONArray(node.children.map { dump(it, viewOf) }))
