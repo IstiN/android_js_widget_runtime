@@ -2,6 +2,12 @@ name: Quality
 
 on: [push, pull_request]
 
+# A new push cancels the runs of the previous head of the same branch/PR:
+# superseded runs must not hold the runner queue (segment A3b).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -103,7 +109,12 @@ jobs:
           # драйвер шлёт MotionEvent напрямую, анимации не нужны.
           disable-animations: false
           script: |
-            ./gradlew installDebug installDebugAndroidTest
+            # Direct adb install of the APKs built BEFORE boot: a gradle
+            # invocation inside the emulator step starts a new daemon and
+            # competes with the TCG emulator for CPU (measured: run
+            # 45710683703, boot variance 6-60 min under load).
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             # Run the instrumentation DIRECTLY (no gradle connected task: it
             # uninstalls the app afterwards and deletes every app-private
             # result location). The runner writes result.json to the internal
@@ -149,15 +160,17 @@ jobs:
           if-no-files-found: warn
 
   # План 6.1 A3: L0-набор фикстур (одна на каждый зарегистрированный тип).
-  # Матрица из 4 шард: TCG-эмулятор без KVM, ~14 c на фикстуру на seed'ах —
-  # 85 L0 в одном job заняли бы заметно больше 30 минут.
+  # Матрица из 6 шард (A3b: было 4 — шард 0/2 упирались в бюджет ~30 мин из-за
+  # вариации загрузки TCG-эмулятора, run 45710683703). TCG без KVM, ~4.6 c на
+  # фикстуру в инструментальных тестах + загрузка эмулятора 6-60 мин.
+  # 6 шард по ~14 фикстур: типичный job ~11 мин, хвост < 30 мин.
   conformance-l0:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
 
@@ -185,7 +198,7 @@ jobs:
         run: |
           all=$(ls .conformance/js_widget_runtime/docs/conformance/fixtures | grep '^l0_' | sort)
           echo "total=$(echo "$all" | wc -l)"
-          filter=$(echo "$all" | awk -v s=${{ matrix.shard }} -v t=4 'NR % t == s' | paste -sd,)
+          filter=$(echo "$all" | awk -v s=${{ matrix.shard }} -v t=6 'NR % t == s' | paste -sd,)
           count=$(echo "$filter" | tr ',' '\n' | wc -l)
           echo "fixtures=$count"
           echo "filter=$filter" >> "$GITHUB_OUTPUT"
@@ -206,7 +219,10 @@ jobs:
           arch: x86_64
           disable-animations: false
           script: |
-            ./gradlew installDebug installDebugAndroidTest
+            # Direct adb install of the APKs built BEFORE boot (no gradle
+            # daemon restart inside the TCG emulator; same as the seeds job).
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             # Same as the seeds job: direct am instrument (gradle's connected
             # task uninstalls the app and wipes the results), collect the
             # internal files as root; one line per command.
