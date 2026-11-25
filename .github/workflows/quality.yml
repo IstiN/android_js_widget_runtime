@@ -56,7 +56,9 @@ jobs:
   # План 6.1 A2: раннер фикстур на эмуляторе; обвязка ставит PASS по seed.
   # A3 расширит до всех L0 фикстур (без аргумента filter).
   conformance:
-    runs-on: ubuntu-latest
+    # ubuntu-раннеры этого окружения не дают KVM ("hardware acceleration
+    # is not available"); macOS-раннер даёт Hypervisor.framework нативно.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
