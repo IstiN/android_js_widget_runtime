@@ -32,8 +32,10 @@ class ConformanceRunner(private val fixtureId: String) {
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
         fun fixtures(): List<String> {
-            val assets = InstrumentationRegistry.getInstrumentation().targetContext.assets
-            val all = assets.list("conformance")!!.sorted()
+            // Фикстуры лежат в assets ТЕСТОВОГО apk (instrumentation.context),
+            // не target (apk приложения под тестом).
+            val all = InstrumentationRegistry.getInstrumentation().context.assets
+                .list("conformance")!!.sorted()
             // Аргумент fixtureFilter: список id через запятую (A2 гоняет три
             // seed, A3 убирает аргумент и гоняет все L0). Имя не `filter`:
             // AndroidJUnitRunner обрабатывает его как class-список и падает.
@@ -76,8 +78,9 @@ class ConformanceRunner(private val fixtureId: String) {
         val target = instr.targetContext
         val recorder = Recorder()
 
-        val widget = asset(target, "conformance/$fixtureId/widget.js")
-        val expected = JSONObject(asset(target, "conformance/$fixtureId/expected.json"))
+        val testCtx = InstrumentationRegistry.getInstrumentation().context
+        val widget = asset(testCtx, "conformance/$fixtureId/widget.js")
+        val expected = JSONObject(asset(testCtx, "conformance/$fixtureId/expected.json"))
         val runtimeJs = asset(target, "jsr/bootstrap-runtime.js")
         val widgetJs = asset(target, "jsr/bootstrap-widget.js")
 

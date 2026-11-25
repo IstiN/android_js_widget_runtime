@@ -107,7 +107,9 @@ jobs:
       - name: Collect results
         run: |
           ./gradlew connectedConformance
-          ls -la app/build/reports/conformance/ || true
+          count=$(ls app/build/reports/conformance/*.result.json 2>/dev/null | wc -l)
+          echo "result.json files: $count"
+          test "$count" -ge 3 || { echo "expected >= 3 result.json (vacuous pass guard)"; exit 1; }
 
       - name: Harness compare
         run: |

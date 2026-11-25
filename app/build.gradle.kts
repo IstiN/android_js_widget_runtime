@@ -85,7 +85,8 @@ tasks.matching { it.name == "mergeDebugAndroidTestAssets" }.configureEach { depe
 
 // connectedConformance: результат инструментальных тестов -> reports/conformance.
 tasks.register<Copy>("connectedConformance") {
-    dependsOn("connectedDebugAndroidTest")
+    // НЕ тянет connectedDebugAndroidTest: шаг Collect results идёт ПОСЛЕ
+    // остановки эмулятора; pull AGP уже положил файлы в additional output.
     from(layout.buildDirectory.dir("outputs/connected_android_test_additional_output")) {
         include("**/conformance/*.result.json")
     }
