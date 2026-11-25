@@ -79,12 +79,11 @@ jobs:
         with:
           node-version: '22'
 
-      # Версия экшена не проверена локально (план 556). История загрузок:
-      # api 24 не стартует на GH Actions (контингенция плана §9 -> api 30);
-      # ubuntu без KVM; macos-15 (arm64) без вложенного HVF ("HVF error:
-      # HV_UNSUPPORTED"). Итог: ubuntu + TCG (ANDoid emulator официально
-      # разрешает софт-эмуляцию через ANDROID_I_WANT_MY_TCG=yes), образ
-      # x86_64 совпадает с архитектурой хоста.
+      # Версия экшена не проверена локально (план 556). История: api 24 глох
+      # на GH Actions только из-за отсутствия TCG-флага (первый запуск был
+      # без ANDROID_I_WANT_MY_TCG; та же причина, что и "Software CPU
+      # emulation is not supported"); api 30 под TCG грузится, но
+      # system_server умирает под нагрузкой. Итог: api 24 (minSdk) + TCG.
       # TCG-эмулятор хрупок по памяти: собираем APK до загрузки эмулятора
       # и гасим Gradle-демон, чтобы сборка не шла параллельно с живым эмулятором.
       - name: Build APKs before boot
@@ -97,7 +96,7 @@ jobs:
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
-          api-level: 30
+          api-level: 24
           target: google_apis
           arch: x86_64
           # TCG-эмулятор падает в adb-шаге отключения анимаций (broken pipe);
