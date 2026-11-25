@@ -102,7 +102,14 @@ jobs:
           # TCG-эмулятор падает в adb-шаге отключения анимаций (broken pipe);
           # драйвер шлёт MotionEvent напрямую, анимации не нужны.
           disable-animations: false
-          script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=hello,counter,scroll_list
+          script: |
+            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=hello,counter,scroll_list
+            # AGP additionalTestOutput is unreliable on api 24 (warning already
+            # at install, empty pull). ConformanceResult also writes the
+            # app-external files dir — pull that copy directly over adb.
+            mkdir -p app/build/reports/conformance
+            adb shell ls /sdcard/Android/data/com.test.jsr/files/conformance || true
+            adb pull /sdcard/Android/data/com.test.jsr/files/conformance/. app/build/reports/conformance/ || true
 
       - name: Collect results
         run: |
