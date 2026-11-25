@@ -104,18 +104,16 @@ jobs:
           disable-animations: false
           script: |
             ./gradlew installDebug installDebugAndroidTest
-            # result.json must survive the AGP uninstall after the connected
-            # task: ConformanceResult writes /sdcard/Android/media/<pkg>/
-            # additional_test_output (not wiped on uninstall). The app targets
-            # a modern SDK, so grant the storage permission explicitly.
-            adb shell pm grant com.test.jsr android.permission.WRITE_EXTERNAL_STORAGE || true
-            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=hello,counter,scroll_list
-            # NOTE: the emulator-runner action runs the script LINE BY LINE
-            # (sh -c per line) — shell control flow must stay on one line.
-            adb shell ls -la /sdcard/Android/media/com.test.jsr/additional_test_output/conformance || true
-            adb logcat -d -s ConformanceResult || true
+            # Run the instrumentation DIRECTLY (no gradle connected task: it
+            # uninstalls the app afterwards and deletes every app-private
+            # result location). The runner writes result.json to the internal
+            # files dir; collect it as root while the app is still installed.
+            # One line per command: the action runs the script line by line.
+            adb shell am instrument -w -e fixtureFilter hello,counter,scroll_list com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -5 instrument.log
+            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
+            adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
             mkdir -p app/build/reports/conformance
-            adb pull /sdcard/Android/media/com.test.jsr/additional_test_output/conformance/. app/build/reports/conformance/ || true
+            for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
 
       - name: Collect results
@@ -203,15 +201,14 @@ jobs:
           disable-animations: false
           script: |
             ./gradlew installDebug installDebugAndroidTest
-            # Same as the seeds job: write to /sdcard/Android/media (survives
-            # the post-test uninstall) with the storage permission granted
-            # explicitly; one line per command (the action runs line by line).
-            adb shell pm grant com.test.jsr android.permission.WRITE_EXTERNAL_STORAGE || true
-            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=${{ steps.list.outputs.filter }}
-            adb shell ls -la /sdcard/Android/media/com.test.jsr/additional_test_output/conformance || true
-            adb logcat -d -s ConformanceResult || true
+            # Same as the seeds job: direct am instrument (gradle's connected
+            # task uninstalls the app and wipes the results), collect the
+            # internal files as root; one line per command.
+            adb shell am instrument -w -e fixtureFilter ${{ steps.list.outputs.filter }} com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -5 instrument.log
+            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
+            adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
             mkdir -p app/build/reports/conformance
-            adb pull /sdcard/Android/media/com.test.jsr/additional_test_output/conformance/. app/build/reports/conformance/ || true
+            for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
 
       - name: Collect results
