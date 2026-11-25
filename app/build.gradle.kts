@@ -74,8 +74,10 @@ dependencies {
 // (генерируемый каталог; статический srcDir androidTest упаковывает их
 // в androidTest APK). connectedDebugAndroidTest тянет задачу сам.
 val conformanceFixtures = tasks.register<Copy>("conformanceFixtures") {
-    from(".conformance/js_widget_runtime/docs/conformance/fixtures")
-    into("src/androidTest/assets/conformance")
+    val pin = rootProject.file(".conformance/js_widget_runtime/docs/conformance/fixtures")
+    doFirst { require(pin.isDirectory) { "нет фикстур пина: $pin — запустите scripts/fetch-conformance.sh" } }
+    from(pin)
+    into(rootProject.file("app/src/androidTest/assets/conformance"))
 }
 tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach { dependsOn(conformanceFixtures) }
 
