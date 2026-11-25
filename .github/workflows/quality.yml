@@ -85,6 +85,13 @@ jobs:
       # HV_UNSUPPORTED"). Итог: ubuntu + TCG (ANDoid emulator официально
       # разрешает софт-эмуляцию через ANDROID_I_WANT_MY_TCG=yes), образ
       # x86_64 совпадает с архитектурой хоста.
+      # TCG-эмулятор хрупок по памяти: собираем APK до загрузки эмулятора
+      # и гасим Gradle-демон, чтобы сборка не шла параллельно с живым эмулятором.
+      - name: Build APKs before boot
+        run: |
+          ./gradlew assembleDebug assembleDebugAndroidTest
+          ./gradlew --stop
+
       - name: Run fixtures on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
