@@ -2,7 +2,6 @@ package com.test.jsr
 
 import android.content.Context
 import android.graphics.Color
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.Log
 import android.view.Gravity
@@ -19,10 +18,9 @@ import org.json.JSONObject
 /**
  * Рендерер: применяет патч-операции reconciler'а к дереву View (issue #2,
  * plan 1.5 A2) — без полной пересборки. Каждый корневой View узла несёт
- * setTag(R.id.jsr_node_id, nodeId). Зарегистрированные типы seed'ов
- * (center, column, row, text, sizedBox, textButton, scroll, container,
- * card, textField) отображаются реально; всё остальное — fallback-карточка
- * с именем типа (общее правило волны C).
+ * setTag(R.id.jsr_node_id, nodeId). Создание и настройка View живут в
+ * реестре мапперов NodeMapperRegistry (по категории, plan 6.1 A3); типы
+ * вне реестра получают fallback-карточку с именем типа (общее правило волны C).
  *
  * Все функции этого файла исполняются только под Robolectric (JaCoCo их не
  * видит -> 0%), поэтому каждая держится на сложности <= 2.
@@ -200,7 +198,7 @@ class NativeRenderer(
         b.has(key) && b.optString(key) != a.optString(key)
 
     private fun updateTextContent(view: TextView, node: JsNode) {
-        view.text = textOf(node)
+        view.text = NodeProps.textOf(node.props)
     }
 
     // ---------- создание views (типы seed'ов; остальное — fallback) ----------
@@ -210,13 +208,14 @@ class NativeRenderer(
         view.setTag(R.id.jsr_node_id, node.nodeId)
         views[node.nodeId] = view
         records[node.nodeId] = node
-        config[node.type]?.invoke(view, node)
+        NodeMapperRegistry.configure[node.type]?.invoke(view, node, sink)
         attachChildren(view, node)
         return view
     }
 
+    /** Registry lookup (plan 6.1 A3): every inventory type resolves; the rest falls back. */
     private fun createView(type: String): View =
-        FACTORIES[type]?.invoke(context) ?: fallbackCard(type)
+        NodeMapperRegistry.factories[type]?.invoke(context) ?: fallbackCard(type)
 
     private fun attachChildren(view: View, node: JsNode) {
         node.children.forEachIndexed { i, child ->
@@ -227,29 +226,15 @@ class NativeRenderer(
         }
     }
 
-    private val FACTORIES: Map<String, (Context) -> View> = mapOf(
-        "center" to { c -> FrameLayout(c) },
-        "column" to { c -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL } },
-        "row" to { c -> LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL } },
-        "text" to { c -> TextView(c) },
-        "sizedBox" to { c -> View(c) },
-        "textButton" to { c -> Button(c).apply { isAllCaps = false } },
-        "button" to { c -> Button(c).apply { isAllCaps = false } },
-        "textField" to { c -> EditText(c) },
-        "scroll" to { c -> scrollOf(c) },
-        "container" to { c -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL } },
-        "card" to { c -> cardOf(c) },
-    )
-
     /** Fallback-карточка референса: имя типа + тег nodeId. */
     private fun fallbackCard(type: String): View {
         val box = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#334155"))
-                cornerRadius = dp(8f).toFloat()
+                cornerRadius = NodeProps.dp(8f).toFloat()
             }
-            setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
+            setPadding(NodeProps.dp(12f), NodeProps.dp(12f), NodeProps.dp(12f), NodeProps.dp(12f))
         }
         val tv = TextView(context)
         tv.text = "[$type]"
@@ -257,24 +242,6 @@ class NativeRenderer(
         box.addView(tv)
         Log.i(TAG, "fallback card for '$type'")
         return box
-    }
-
-    private fun scrollOf(c: Context): View {
-        val sv = ScrollView(c)
-        val inner = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
-        sv.addView(inner, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        return sv
-    }
-
-    private fun cardOf(c: Context): View {
-        val ll = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }
-        ll.background = GradientDrawable().apply {
-            setColor(Color.WHITE)
-            cornerRadius = dp(12f).toFloat()
-        }
-        ll.elevation = dp(2f).toFloat()
-        return ll
     }
 
     // ---------- прикрепление детей и отступы ----------
@@ -305,7 +272,7 @@ class NativeRenderer(
     }
 
     private fun applySpacing(view: View, node: JsNode, child: View, index: Int) {
-        val add = spacingPx(node) * index.coerceAtMost(1)
+        val add = NodeProps.pxOf(node.props, "spacing") * index.coerceAtMost(1)
         if (add == 0) return
         setSpacingSide(child, add, isVertical(view))
     }
@@ -324,133 +291,10 @@ class NativeRenderer(
 
     private fun applyChildMargin(child: JsNode, childView: View) {
         val lp = childView.layoutParams as? ViewGroup.MarginLayoutParams ?: return
-        val margin = pxOf(child.props, "margin")
+        val margin = NodeProps.pxOf(child.props, "margin")
         lp.setMargins(margin, margin, margin, margin)
         childView.layoutParams = lp
     }
-
-    // ---------- конфигурация по типу ----------
-
-    private val config: Map<String, (View, JsNode) -> Unit> = mapOf(
-        "text" to { v, n -> configureText(v as TextView, n) },
-        "textButton" to { v, n -> configureButton(v as Button, n) },
-        "button" to { v, n -> configureButton(v as Button, n) },
-        "textField" to { v, n -> configureInput(v as EditText, n) },
-        "sizedBox" to { v, n -> configureSizedBox(v, n) },
-        "container" to { v, n -> configureContainer(v, n) },
-        "card" to { v, n -> configureCard(v, n) },
-        "scroll" to { v, _ -> (v as ScrollView).isVerticalScrollBarEnabled = true },
-    )
-
-    private fun configureText(view: TextView, node: JsNode) {
-        view.text = textOf(node)
-        applyFontSize(view, node)
-        applyTextColor(view, node)
-        applyFontWeight(view, node)
-    }
-
-    private fun applyFontSize(view: TextView, node: JsNode) {
-        val style = node.props.optDouble("fontSize", -1.0)
-        if (style > 0) view.textSize = dp(style.toFloat()).toFloat()
-    }
-
-    private fun applyTextColor(view: TextView, node: JsNode) {
-        val color = node.props.optString("color")
-        if (color.isNotEmpty()) view.setTextColor(parseColor(color))
-    }
-
-    private fun applyFontWeight(view: TextView, node: JsNode) {
-        val bold = node.props.optString("fontWeight") in setOf("bold", "w600", "w700", "w800")
-        view.setTypeface(null, if (bold) Typeface.BOLD else Typeface.NORMAL)
-    }
-
-    private fun configureButton(view: Button, node: JsNode) {
-        view.text = textOf(node)
-        val action = firstEvent(node, "onTap", "onPressed", "onPress")
-        if (action != null) view.setOnClickListener {
-            sink.onAction(action, payloadOf(node))
-        }
-    }
-
-    private fun configureInput(view: EditText, node: JsNode) {
-        view.hint = node.props.optString("hint")
-        view.setText(node.props.optString("initialValue"))
-    }
-
-    private fun configureSizedBox(view: View, node: JsNode) {
-        view.layoutParams = ViewGroup.LayoutParams(pxOf(node.props, "width"), pxOf(node.props, "height"))
-    }
-
-    private fun configureContainer(view: View, node: JsNode) {
-        val color = decorationColor(node)
-        if (color.isNotEmpty()) {
-            view.background = GradientDrawable().apply { setColor(parseColor(color)) }
-            applyRadius(view.background, node)
-        }
-        applyPadding(view, node)
-    }
-
-    private fun applyRadius(background: android.graphics.drawable.Drawable?, node: JsNode) {
-        roundOf(background)?.let { it.cornerRadius = radiusPx(node) }
-    }
-
-    private fun roundOf(background: android.graphics.drawable.Drawable?): GradientDrawable? =
-        background as? GradientDrawable
-
-    private fun radiusPx(node: JsNode): Float {
-        val r = node.props.optDouble("borderRadius", -1.0)
-        if (r < 0) return -1f
-        return dp(r.toFloat()).toFloat()
-    }
-
-    private fun applyPadding(view: View, node: JsNode) {
-        val pad = pxOf(node.props, "padding")
-        if (pad > 0) view.setPadding(pad, pad, pad, pad)
-    }
-
-    private fun configureCard(view: View, node: JsNode) {
-        val color = decorationColor(node)
-        if (color.isNotEmpty()) {
-            val gd = view.background as? GradientDrawable
-            gd?.setColor(parseColor(color))
-        }
-        applyPadding(view, node)
-    }
-
-    // ---------- чтение нормализованных значений ----------
-
-    private fun textOf(node: JsNode): String {
-        val props = node.props
-        return props.optString("data", props.optString("text", props.optString("label", "")))
-    }
-
-    private fun firstEvent(node: JsNode, vararg keys: String): String? =
-        keys.map { node.events.optString(it) }.firstOrNull { it.isNotEmpty() }
-
-    /** Тап-события несут payload- prop узла (по умолчанию {}). */
-    private fun payloadOf(node: JsNode): String {
-        val payload = node.props.optJSONObject("payload")
-        return payload?.toString() ?: "{}"
-    }
-
-    private fun decorationColor(node: JsNode): String =
-        node.props.optJSONObject("decoration")?.optString("color") ?: ""
-
-    private fun spacingPx(node: JsNode): Int = pxOf(node.props, "spacing")
-
-    private fun pxOf(props: JSONObject, key: String): Int {
-        val v = props.optDouble(key, -1.0)
-        if (v < 0) return 0
-        return dp(v.toFloat())
-    }
-
-    private fun parseColor(s: String): Int = try {
-        Color.parseColor(s)
-    } catch (e: IllegalArgumentException) {
-        Color.TRANSPARENT
-    }
-
-    private fun dp(d: Float): Int = (d * 1.5f).toInt()
 
     companion object {
         private const val TAG = "NativeRenderer"

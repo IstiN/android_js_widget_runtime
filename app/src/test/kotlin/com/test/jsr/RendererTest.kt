@@ -161,7 +161,7 @@ class RendererTest {
 
     @Test
     fun `fallback card carries the node id tag`() {
-        val tree = normalize("""{"type":"column","children":[{"type":"map","center":[0.0,0.0]}]}""")
+        val tree = normalize("""{"type":"column","children":[{"type":"align","center":[0.0,0.0]}]}""")
 
         renderer.render(tree)
 
@@ -169,5 +169,16 @@ class RendererTest {
         assertTrue(card != null)
         assertEquals("n1", card!!.getTag(R.id.jsr_node_id))
         assertTrue((card as android.view.ViewGroup).getChildAt(0) is TextView)
+    }
+
+    @Test
+    fun `host contract type renders a slot container with the node id tag`() {
+        val tree = normalize("""{"type":"column","children":[{"type":"map","width":200}]}""")
+
+        renderer.render(tree)
+
+        val host = renderer.viewOf("n1")
+        assertTrue(host is HostContractView)
+        assertEquals("n1", host!!.getTag(R.id.jsr_node_id))
     }
 }
