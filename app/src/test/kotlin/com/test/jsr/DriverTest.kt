@@ -20,7 +20,8 @@ import org.robolectric.annotation.Config
  * Действия драйвера производят документированные события (план 1.4 §3.3):
  * тап — node.payload, input — {value} c onChange ?? onChanged, submit —
  * onSubmit ?? onSubmitted, back — __jsrHostEvent('back', {}), scroll —
- * ACTION_SCROLL (amendment A2).
+ * ACTION_SCROLL (amendment A2). Неприменимое действие возвращает причину
+ * (никаких тихих no-op) и не диспатчит событие.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -41,8 +42,8 @@ class DriverTest {
             views = { views[it] },
             allViews = { views.values },
             root = { root },
-            onAction = { a, p -> actions.add(a to p) },
-            onHostEvent = { t, p -> hostEvents.add(t to p) },
+            onAction = { a, p -> actions.add(a to p); null },
+            onHostEvent = { t, p -> hostEvents.add(t to p); null },
         )
     }
 
@@ -125,6 +126,103 @@ class DriverTest {
         driver.back()
 
         assertEquals(listOf("back" to "{}"), hostEvents)
+    }
+
+    // ---------- никаких тихих no-op: каждая причина видна ----------
+
+    @Test
+    fun `tap by missing text reports the reason`() {
+        mount("""{"type":"column","children":[]}""")
+
+        val error = driver.tap("+1")
+
+        assertEquals("tap: no view with text \"+1\"", error)
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun `tap by missing node id reports the reason`() {
+        mount("""{"type":"column","children":[]}""")
+
+        val error = driver.tap("n7")
+
+        assertEquals("tap: no view with node id n7", error)
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun `tap on a node without tap event reports the reason`() {
+        val tree = mount(
+            """{"type":"column","children":[{"type":"text","data":"Label"}]}""",
+        )
+        views[tree.nodeId] = android.widget.LinearLayout(ApplicationProvider.getApplicationContext())
+
+        val error = driver.tap("Label")
+
+        assertEquals("tap: no tap event on node n1 (Label)", error)
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun `input on a non editable view reports the reason`() {
+        val tree = mount(
+            """{"type":"column","children":[{"type":"text","data":"Not an input","onChange":"c"}]}""",
+        )
+        views["n1"] = android.widget.TextView(ApplicationProvider.getApplicationContext())
+
+        val error = driver.input("n1", "hello")
+
+        assertEquals("input: view is not an EditText", error)
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun `input on a missing node reports the reason`() {
+        mount("""{"type":"column","children":[]}""")
+
+        assertEquals("input: no view with node id n3", driver.input("n3", "x"))
+    }
+
+    @Test
+    fun `input on an editable node without change event reports the reason`() {
+        mount("""{"type":"column","children":[{"type":"textField"}]}""")
+        views["n1"] = EditText(ApplicationProvider.getApplicationContext())
+
+        assertEquals("input: no change event on node n1", driver.input("n1", "x"))
+    }
+
+    @Test
+    fun `submit on a missing node reports the reason`() {
+        mount("""{"type":"column","children":[]}""")
+
+        assertEquals("submit: no view with node id n1", driver.submit("n1"))
+    }
+
+    @Test
+    fun `scroll without a target reports the reason`() {
+        mount("""{"type":"column","children":[]}""")
+
+        assertEquals("scroll: no scroll target", driver.scroll(300))
+    }
+
+    @Test
+    fun `swipe without a target reports the reason`() {
+        mount("""{"type":"column","children":[]}""")
+
+        assertEquals("swipe: no scroll target", driver.swipe(0, 0, 0, 10, 100))
+    }
+
+    @Test
+    fun `back propagates the engine error of the host event`() {
+        val failing = InteractionDriver(
+            views = { null },
+            allViews = { emptyList() },
+            root = { null },
+            onAction = { _, _ -> null },
+            onHostEvent = { _, _ -> "ReferenceError: no global" },
+        )
+
+        assertEquals("ReferenceError: no global", failing.back())
     }
 
     @Test

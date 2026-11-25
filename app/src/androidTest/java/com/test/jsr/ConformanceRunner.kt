@@ -2,6 +2,7 @@ package com.test.jsr
 
 import android.content.Intent
 import android.os.SystemClock
+import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,12 +26,14 @@ import org.junit.runners.Parameterized
 class ConformanceRunner(private val fixtureId: String) {
 
     private val rendererBox = arrayOfNulls<NativeRenderer>(1)
-    private val onActionBox = arrayOfNulls<(String, String) -> Unit>(1)
-    private val onHostEventBox = arrayOfNulls<(String, String) -> Unit>(1)
+    private val onActionBox = arrayOfNulls<(String, String) -> String?>(1)
+    private val onHostEventBox = arrayOfNulls<(String, String) -> String?>(1)
     private val timersBox = arrayOfNulls<Timers>(1)
     private val engineBox = arrayOfNulls<JsWidgetRuntime>(1)
 
     companion object {
+        const val TAG = "ConformanceRunner"
+
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
         fun fixtures(): List<String> {
@@ -46,8 +49,13 @@ class ConformanceRunner(private val fixtureId: String) {
         }
     }
 
-    /** Запись каналов хоста (HostSinks); всё вызывается с main-потока. */
-    private class Recorder : HostSinks {
+    /**
+     * Запись каналов хоста (HostSinks) + рендер в дерево View: без рендера
+     * NativeRenderer остаётся пустым (dump = null, тапы драйвера мимо
+     * корневой записи — root cause прогона 45700024123).
+     * Всё вызывается с main-потока.
+     */
+    private class Recorder(private val renderInto: (JSONObject) -> Unit) : HostSinks {
         val renders = mutableListOf<String>()
         val trace = mutableListOf<String>()
         val console = mutableListOf<String>()
@@ -57,6 +65,8 @@ class ConformanceRunner(private val fixtureId: String) {
         override fun onRender(tree: JSONObject) {
             renders.add(tree.toString())
             trace.add("render")
+            Log.i(TAG, "render #${renders.size} -> view tree")
+            renderInto(tree)
         }
 
         override fun onTitle(title: String) {
@@ -78,7 +88,11 @@ class ConformanceRunner(private val fixtureId: String) {
     fun fixture() {
         val instr = InstrumentationRegistry.getInstrumentation()
         val target = instr.targetContext
-        val recorder = Recorder()
+        // Рендер payloads идут в NativeRenderer (тот же путь, что у
+        // MainActivity.onRender) — иначе view-дерево и dump не строятся.
+        val recorder = Recorder { tree ->
+            rendererBox[0]?.render(JsWidgetTree.normalize(tree))
+        }
 
         val testCtx = InstrumentationRegistry.getInstrumentation().context
         val widget = asset(testCtx, "conformance/$fixtureId/widget.js")
@@ -98,15 +112,23 @@ class ConformanceRunner(private val fixtureId: String) {
             scenario.onActivity { activity ->
                 activity.root.removeAllViews()
                 val engine = JsWidgetRuntime()
-                val onAction: (String, String) -> Unit = { actionId, payloadJson ->
-                    engine.callEvent(actionId, payloadJson)
+                // Колбэки возвращают ошибку движка (или null): драйвер
+                // превращает её в ошибку действия, никаких тихих сбоев.
+                val onAction: (String, String) -> String? = { actionId, payloadJson ->
+                    Log.i(TAG, "callEvent $actionId")
+                    engine.callEvent(actionId, payloadJson)?.let { "event $actionId: $it" }
                 }
-                val onHostEvent: (String, String) -> Unit = { eventTarget, payloadJson ->
+                val onHostEvent: (String, String) -> String? = { eventTarget, payloadJson ->
                     engine.eval("__jsrHostEvent(${JsStrings.quote(eventTarget)}, $payloadJson);", "host-event")
+                        ?.let { "host event $eventTarget: $it" }
                 }
                 onActionBox[0] = onAction
                 onHostEventBox[0] = onHostEvent
-                val renderer = NativeRenderer(target, onAction, activity.root)
+                // EventSink рендерера (реальные тапы по View) — Unit: ошибка
+                // движка там не фатальна, путь драйвера возвращает её сам.
+                val renderer = NativeRenderer(
+                    target, { a, p -> onActionBox[0]?.invoke(a, p) }, activity.root,
+                )
                 val timers = Timers(engine)
                 val handlers = ChannelHandlers(
                     engine,
@@ -141,65 +163,94 @@ class ConformanceRunner(private val fixtureId: String) {
             instr.waitForIdleSync()
 
             if (bootError[0] != null) {
-                writeResult(target, fixtureId, recorder, null, bootError[0])
+                writeResult(target, fixtureId, recorder, null, null, bootError[0])
                 disposeOnMain(instr, timersBox, engineBox)
                 return
             }
 
-            applyActions(instr, expected.optJSONArray("actions") ?: JSONArray(), rendererBox[0]!!)
+            // dump = состояние ПЕРВОГО рендера (compare сверяет его с
+            // normalizeTree(renders[0])), finalDump — после действий
+            // (normalizeTree(renders[last])).
+            val initialDump = dumpOf(instr)
+            val actionError = applyActions(
+                instr, expected.optJSONArray("actions") ?: JSONArray(), rendererBox[0]!!,
+            )
+            if (actionError != null) Log.e(TAG, actionError)
 
             instr.waitForIdleSync()
             settle(400)
             instr.waitForIdleSync()
 
-            val dumpBox = arrayOfNulls<JSONObject>(1)
-            scenario.onActivity { activity ->
-                val root = rendererBox[0]!!.rootNode()
-                if (root != null) dumpBox[0] = AuiDump.dump(root, rendererBox[0]!!::viewOf)
-            }
-            writeResult(target, fixtureId, recorder, dumpBox[0], null)
+            writeResult(target, fixtureId, recorder, initialDump, dumpOf(instr), actionError)
             disposeOnMain(instr, timersBox, engineBox)
         }
     }
 
-    /** Действия expected.json по порядку; между действиями — очередь main. */
+    /**
+     * Действия expected.json по порядку; между действиями — очередь main.
+     * Первое неприменимое действие останавливает набор и возвращается как
+     * ошибка фикстуры (никаких тихих no-op: причина попадает в result.json
+     * и logcat).
+     */
     private fun applyActions(
         instr: android.app.Instrumentation,
         actions: JSONArray,
         renderer: NativeRenderer,
-    ) {
+    ): String? {
         for (i in 0 until actions.length()) {
             val action = actions.getJSONObject(i)
-            when {
-                action.has("tap") -> instr.runOnMainSync { driver(renderer).tap(action.getString("tap")) }
-                action.has("input") -> {
-                    val spec = action.getJSONObject("input")
-                    instr.runOnMainSync {
-                        driver(renderer).input(spec.getString("node"), spec.getString("value"))
-                    }
-                }
-                action.has("scroll") -> {
-                    val dxdy = action.getJSONArray("scroll")
-                    instr.runOnMainSync { driver(renderer).scroll(dxdy.getInt(1)) }
-                }
-                action.has("swipe") -> {
-                    val s = action.getJSONArray("swipe")
-                    instr.runOnMainSync {
-                        driver(renderer).swipe(
-                            s.getInt(0), s.getInt(1), s.getInt(2), s.getInt(3), s.optInt(4, 300),
-                        )
-                    }
-                }
-                action.has("back") -> instr.runOnMainSync { driver(renderer).back() }
-                action.has("wait") -> {
-                    settle(action.getLong("wait"))
-                    instr.waitForIdleSync()
-                }
+            Log.i(TAG, "action ${action}")
+            if (action.has("wait")) {
+                settle(action.getLong("wait"))
+                instr.waitForIdleSync()
+                continue
             }
+            val error = applyOne(instr, action, renderer)
+            if (error != null) return error
             instr.waitForIdleSync()
             settle(250) // микрозадачи resolve и последующий рендер
             instr.waitForIdleSync()
         }
+        return null
+    }
+
+    /** Одно действие; возвращает причину, если применить не удалось. */
+    private fun applyOne(
+        instr: android.app.Instrumentation,
+        action: JSONObject,
+        renderer: NativeRenderer,
+    ): String? {
+        val errorBox = arrayOfNulls<String>(1)
+        instr.runOnMainSync {
+            val d = driver(renderer)
+            errorBox[0] = when {
+                action.has("tap") -> d.tap(action.getString("tap"))
+                action.has("input") -> {
+                    val spec = action.getJSONObject("input")
+                    d.input(spec.getString("node"), spec.getString("value"))
+                }
+                action.has("submit") -> d.submit(action.getString("submit"))
+                action.has("scroll") -> d.scroll(action.getJSONArray("scroll").getInt(1))
+                action.has("swipe") -> {
+                    val s = action.getJSONArray("swipe")
+                    d.swipe(s.getInt(0), s.getInt(1), s.getInt(2), s.getInt(3), s.optInt(4, 300))
+                }
+                action.has("back") -> d.back()
+                else -> "unknown action: $action"
+            }
+        }
+        return errorBox[0]
+    }
+
+    /** AUI dump текущего view-дерева (null, пока рендеров не было). */
+    private fun dumpOf(instr: android.app.Instrumentation): JSONObject? {
+        val box = arrayOfNulls<JSONObject>(1)
+        instr.runOnMainSync {
+            val renderer = rendererBox[0] ?: return@runOnMainSync
+            val root = renderer.rootNode() ?: return@runOnMainSync
+            box[0] = AuiDump.dump(root, renderer::viewOf)
+        }
+        return box[0]
     }
 
     private fun driver(renderer: NativeRenderer): InteractionDriver = InteractionDriver(
@@ -225,25 +276,26 @@ class ConformanceRunner(private val fixtureId: String) {
         }
     }
 
-    /** result.json: dump/finalDump — финальное состояние; рендеры в порядке. */
+    /** result.json (план 1.4): dump — первый рендер, finalDump — последний;
+     * рендеры в порядке; actionError — причина первого неприменённого действия. */
     private fun writeResult(
         target: android.content.Context,
         fixtureId: String,
         recorder: Recorder,
         dump: JSONObject?,
+        finalDump: JSONObject?,
         error: String?,
     ) {
         val result = JSONObject()
         result.put("fixture", fixtureId)
         result.put("platform", "android")
         result.put("status", "DONE")
-        if (dump != null) {
-            result.put("dump", dump)
-            result.put("finalDump", dump)
-        }
+        if (dump != null) result.put("dump", dump)
         result.put("trace", JSONArray(recorder.trace))
         result.put("diffs", JSONArray())
+        result.put("screenshot", JSONObject.NULL)
         result.put("renders", JSONArray(recorder.renders))
+        if (finalDump != null) result.put("finalDump", finalDump)
         if (recorder.title != null) result.put("title", recorder.title!!)
         if (recorder.state != null) result.put("state", recorder.state!!)
         result.put("console", JSONArray(recorder.console))

@@ -43,12 +43,14 @@ class NativeRenderer(
         val old = rootTree
         if (old == null) {
             mountFull(tree)
+            Log.i(TAG, "mount ${tree.type} (${tree.children.size} children)")
             return emptyList()
         }
         val result = Reconciler.diff(old, tree)
         applyAll(result.ops)
         remapAll(result.renames)
         rootTree = tree
+        Log.i(TAG, "patch ops=${result.ops.size} renames=${result.renames.size}")
         return result.ops
     }
 

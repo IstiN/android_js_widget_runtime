@@ -115,6 +115,9 @@ jobs:
             mkdir -p app/build/reports/conformance
             for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
+            # Evidence artifact: driver/renderer/recorder logcat of the run.
+            adb logcat -d > logcat.txt 2>&1 || true
+            tail -3 logcat.txt
 
       - name: Collect results
         run: |
@@ -141,6 +144,7 @@ jobs:
           name: conformance-android
           path: |
             conformance-android.md
+            logcat.txt
             app/build/reports/conformance/
           if-no-files-found: warn
 
@@ -212,6 +216,9 @@ jobs:
             mkdir -p app/build/reports/conformance
             for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
+            # Evidence artifact: driver/renderer/recorder logcat of the run.
+            adb logcat -d > logcat.txt 2>&1 || true
+            tail -3 logcat.txt
 
       - name: Collect results
         run: |
@@ -239,6 +246,7 @@ jobs:
           name: conformance-android-l0-shard${{ matrix.shard }}
           path: |
             conformance-android-l0.md
+            logcat.txt
             app/build/reports/conformance/
           if-no-files-found: warn
 
