@@ -79,12 +79,14 @@ jobs:
         with:
           node-version: '22'
 
-      # Версия экшена не проверена локально (план 556); api 24 x86_64
-      # google_apis: /sdcard/Android/media доступен для additional output.
+      # Версия экшена не проверена локально (план 556). API 24 не грузится
+      # на GH Actions (контингенция плана §9: emulator API 24 не стартует ->
+      # API 30; фиксируется в теле PR). x86_64 google_apis: /sdcard/Android/media
+      # доступен для additional output.
       - name: Run fixtures on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 24
+          api-level: 30
           target: google_apis
           arch: x86_64
           script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.filter=hello,counter,scroll_list
