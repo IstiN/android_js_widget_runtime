@@ -34,9 +34,10 @@ class ConformanceRunner(private val fixtureId: String) {
         fun fixtures(): List<String> {
             val assets = InstrumentationRegistry.getInstrumentation().targetContext.assets
             val all = assets.list("conformance")!!.sorted()
-            // Аргумент filter: список id через запятую (A2 гоняет три seed,
-            // A3 убирает фильтр и гоняет все L0).
-            val filter = InstrumentationRegistry.getArguments().getString("filter")
+            // Аргумент fixtureFilter: список id через запятую (A2 гоняет три
+            // seed, A3 убирает аргумент и гоняет все L0). Имя не `filter`:
+            // AndroidJUnitRunner обрабатывает его как class-список и падает.
+            val filter = InstrumentationRegistry.getArguments().getString("fixtureFilter")
             return if (filter.isNullOrEmpty()) all else all.filter { it in filter.split(",") }
         }
     }
