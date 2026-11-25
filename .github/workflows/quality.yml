@@ -52,3 +52,63 @@ jobs:
             app/build/reports/tests/testDebugUnitTest/
             app/build/reports/coverage/test/debug/report.xml
           if-no-files-found: ignore
+
+  # План 6.1 A2: раннер фикстур на эмуляторе; обвязка ставит PASS по seed.
+  # A3 расширит до всех L0 фикстур (без аргумента filter).
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install NDK and CMake
+        run: |
+          sdkmanager_dir="$ANDROID_HOME/cmdline-tools/latest/bin"
+          [ -x "$sdkmanager_dir/sdkmanager" ] || sdkmanager_dir="$ANDROID_HOME/tools/bin"
+          yes | "$sdkmanager_dir/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Версия экшена не проверена локально (план 556); api 24 x86_64
+      # google_apis: /sdcard/Android/media доступен для additional output.
+      - name: Run fixtures on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 24
+          target: google_apis
+          arch: x86_64
+          script: ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.filter=hello,counter,scroll_list
+
+      - name: Collect results
+        run: |
+          ./gradlew connectedConformance
+          ls -la app/build/reports/conformance/ || true
+
+      - name: Harness compare
+        run: |
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results app/build/reports/conformance \
+            --out-report conformance-android.md \
+            --out-badge badges/conformance-android.json
+          cat conformance-android.md
+
+      - name: Upload conformance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-android
+          path: |
+            conformance-android.md
+            app/build/reports/conformance/
+          if-no-files-found: warn
