@@ -80,6 +80,8 @@ val conformanceFixtures = tasks.register<Copy>("conformanceFixtures") {
     into(rootProject.file("app/src/androidTest/assets/conformance"))
 }
 tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach { dependsOn(conformanceFixtures) }
+// Gradle 9: merge читает каталог фикстур — зависимость обязана быть явной.
+tasks.matching { it.name == "mergeDebugAndroidTestAssets" }.configureEach { dependsOn(conformanceFixtures) }
 
 // connectedConformance: результат инструментальных тестов -> reports/conformance.
 tasks.register<Copy>("connectedConformance") {
