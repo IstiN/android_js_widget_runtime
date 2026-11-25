@@ -1,7 +1,9 @@
 package com.test.jsr
 
+import android.content.Intent
 import android.os.SystemClock
 import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
@@ -86,7 +88,13 @@ class ConformanceRunner(private val fixtureId: String) {
 
         val bootError = arrayOfNulls<String>(1)
 
-        ActivityScenario.launch(ConformanceActivity::class.java).use { scenario ->
+        // Intent from the APPLICATION context: the component gets the target
+        // package com.test.jsr and resolves against the app manifest.
+        // launch(Class) builds the component from the instrumentation package
+        // com.test.jsr.test, where the activity is not declared (run 45673792050).
+        ActivityScenario.launch<ConformanceActivity>(
+            Intent(ApplicationProvider.getApplicationContext(), ConformanceActivity::class.java)
+        ).use { scenario ->
             scenario.onActivity { activity ->
                 activity.root.removeAllViews()
                 val engine = JsWidgetRuntime()

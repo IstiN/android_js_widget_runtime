@@ -15,5 +15,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+          Fixture-runner host: declared in the app manifest because
+          ActivityScenario resolves the component against the target package
+          manifest (com.test.jsr); a test-apk declaration expands to the
+          component com.test.jsr.test.ConformanceActivity, which never matches
+          the class com.test.jsr.ConformanceActivity (runs 45672139918,
+          45673792050). The class lives in androidTest and is loaded by the
+          instrumentation class loader.
+        -->
+        <activity android:name=".ConformanceActivity" android:exported="false" />
     </application>
 </manifest>
