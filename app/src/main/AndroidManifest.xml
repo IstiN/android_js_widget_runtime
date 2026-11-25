@@ -2,6 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Тест-приложение: заявляет NETWORK (выборка данных) и право INTERNET. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      result.json writing to /sdcard/Android/media/<pkg>/additional_test_output
+      (the only location that survives the AGP uninstall after connected tests).
+      Runtime-granted by the CI emulator script; maxSdkVersion caps it to the
+      versions where it is still a thing (scoped storage drops it later).
+    -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <application
         android:label="JSR Native POC"
         android:theme="@android:style/Theme.Material.NoActionBar">
