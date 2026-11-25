@@ -1,6 +1,8 @@
 package com.test.jsr
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -12,11 +14,14 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 
-class MainActivity : Activity(), WidgetRuntime.Listener, NativeRenderer.EventSink {
+class MainActivity : Activity(), HostSinks, NativeRenderer.EventSink {
     private lateinit var engine: JsWidgetRuntime
     private lateinit var runtime: WidgetRuntime
+    private lateinit var timers: Timers
+    private lateinit var handlers: ChannelHandlers
     private lateinit var root: FrameLayout
 
     /** Метка экземпляра движка; __IID помечает исходящие payload (план 1.1). */
@@ -36,13 +41,28 @@ class MainActivity : Activity(), WidgetRuntime.Listener, NativeRenderer.EventSin
         setContentView(buildChrome())
 
         engine = JsWidgetRuntime()
-        runtime = WidgetRuntime(engine, this)
+        timers = Timers(engine)
+        handlers = ChannelHandlers(
+            engine, sinks = this, services = Services(
+                storage = AndroidHostServices.storage(this),
+                secrets = AndroidHostServices.secrets(this),
+                http = AndroidHostServices.http(),
+                assets = AndroidHostServices.assets(this),
+                processRunner = AndroidHostServices.processRunner(),
+                openUrl = ActivityOpenUrl(this),
+                capture = ViewCapture({ root }, cacheDir),
+            ),
+            timers = timers,
+            capabilities = AndroidHostServices.declaredCapabilities(this),
+        )
+        runtime = WidgetRuntime(engine, handlers::dispatch)
         engine.messageSink = runtime::onJsMessage
         engine.start()
         loadWidget("counter.js")
     }
 
     override fun onDestroy() {
+        timers.dispose()
         runtime.dispose()
         super.onDestroy()
     }
@@ -105,36 +125,33 @@ class MainActivity : Activity(), WidgetRuntime.Listener, NativeRenderer.EventSin
             ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
-    // ---------- JsWidgetRuntime.Listener: каналы от JS ----------
+    // ---------- HostSinks: fire-and-forget каналы ----------
 
-    override fun onJsMessage(channel: String, payload: String) {
-        when (channel) {
-            "__jsr_set_interval" -> engine.scheduleTimer(payload) {
-                // Тик таймера: зовём глобал __jsrInterval(id) из bootstrap-runtime.
-                val id = JSONObject(payload).optString("id")
-                val err = engine.eval("__jsrInterval('$id');", "timer")
-                if (err != null) Log.e(TAG, "timer $id: $err")
+    override fun onRender(tree: JSONObject) {
+        runOnUiThread {
+            try {
+                val view = NativeRenderer.build(tree, this, this)
+                root.removeAllViews()
+                root.addView(view, FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT))
+            } catch (e: Exception) {
+                Log.e(TAG, "render error: $e")
+                showError("render: $e")
             }
-            "__jsr_clear_interval" -> engine.cancelTimer(
-                JSONObject(payload).optString("id"))
-            "__jsr_render" -> runOnUiThread {
-                Log.i(TAG, "render: rebuilding root")
-                try {
-                    val tree = JSONObject(payload)
-                    val view = NativeRenderer.build(tree, this, this)
-                    root.removeAllViews()
-                    root.addView(view, FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT))
-                } catch (e: Exception) {
-                    Log.e(TAG, "render error: $e")
-                    showError("render: $e")
-                }
-            }
-            "__jsr_set_title" -> title = payload
-            "__jsr_log" -> Log.i("jsr", payload)
-            else -> Log.d(TAG, "channel $channel: $payload")
         }
+    }
+
+    override fun onTitle(title: String) {
+        this.title = title
+    }
+
+    override fun onLog(line: String) {
+        Log.i("jsr", line)
+    }
+
+    override fun onExportState(state: JSONObject) {
+        Log.i(TAG, "exportState: $state")
     }
 
     // ---------- NativeRenderer.EventSink: тапы из нативных View ----------
@@ -148,4 +165,19 @@ class MainActivity : Activity(), WidgetRuntime.Listener, NativeRenderer.EventSin
     companion object {
         private const val TAG = "MainActivity"
     }
+}
+
+/** Снимок корневого view в PNG в кеше приложения (канал __jsr_capture). */
+class ViewCapture(private val view: () -> View, private val dir: File) : CaptureService {
+    override fun capture(): CaptureResult? = captureView(view(), dir)
+}
+
+internal fun captureView(view: View?, dir: File): CaptureResult? {
+    view ?: return null
+    val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+    view.draw(Canvas(bitmap))
+    dir.mkdirs()
+    val file = File(dir, "jsr-capture-${System.currentTimeMillis()}.png")
+    file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    return CaptureResult(file.absolutePath, bitmap.width, bitmap.height)
 }

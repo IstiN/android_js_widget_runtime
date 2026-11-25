@@ -1,23 +1,15 @@
 package com.test.jsr
 
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import org.json.JSONObject
-
 /**
  * QuickJS-движок поверх JNI-моста. Имя класса зафиксировано quickjs_jni.c
  * (символы Java_com_test_jsr_JsWidgetRuntime_*), поэтому обёртка JNI живёт
- * здесь, а не в отдельном QuickJsEngine.
+ * здесь, а не в отдельном QuickJsEngine. Таймеры — в Timers (план A1b).
  */
 class JsWidgetRuntime : JsEngine {
     private var handle: Long = 0
 
     /** Точка выхода сообщений из JS; вызывается через onJsMessage из C. */
     var messageSink: ((channel: String, payload: String) -> Unit)? = null
-
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val timers = mutableMapOf<String, Runnable>()
 
     fun start() {
         check(handle == 0L) { "engine already started" }
@@ -34,8 +26,6 @@ class JsWidgetRuntime : JsEngine {
     override fun executePendingJobs() = Unit
 
     override fun dispose() {
-        timers.values.forEach(mainHandler::removeCallbacks)
-        timers.clear()
         if (handle != 0L) {
             nativeDispose(handle)
             handle = 0
@@ -53,43 +43,7 @@ class JsWidgetRuntime : JsEngine {
         messageSink?.invoke(channel, payload)
     }
 
-    /**
-     * Планирует JS-таймер из канала __jsr_set_interval.
-     * payload: {"id":"i1","ms":1000,"once":true}  (once=true -> setTimeout)
-     */
-    fun scheduleTimer(payload: String, tick: () -> Unit) {
-        try {
-            val obj = JSONObject(payload)
-            val id = obj.optString("id")
-            val ms = obj.optLong("ms", 0L)
-            val once = obj.optBoolean("once", false)
-            val old = timers.remove(id)
-            old?.let(mainHandler::removeCallbacks)
-            val runnable = object : Runnable {
-                override fun run() {
-                    tick()
-                    if (!once) {
-                        timers[id] = this
-                        mainHandler.postDelayed(this, ms)
-                    } else {
-                        timers.remove(id)
-                    }
-                }
-            }
-            timers[id] = runnable
-            mainHandler.postDelayed(runnable, ms)
-        } catch (e: Exception) {
-            Log.e(TAG, "scheduleTimer: $e")
-        }
-    }
-
-    fun cancelTimer(id: String) {
-        timers.remove(id)?.let(mainHandler::removeCallbacks)
-    }
-
     companion object {
-        private const val TAG = "JsWidgetRuntime"
-
         init {
             System.loadLibrary("jsr_bridge")
         }

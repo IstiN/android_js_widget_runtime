@@ -6,17 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetRuntimeTest {
-    private class RecordingListener : WidgetRuntime.Listener {
-        val messages = mutableListOf<Pair<String, String>>()
-        override fun onJsMessage(channel: String, payload: String) {
-            messages += channel to payload
-        }
-    }
+    private val messages = mutableListOf<Pair<String, String>>()
 
     @Test
     fun `boot evaluates iid, runtime half, widget half, widget file in order`() {
         val engine = FakeJsEngine()
-        val runtime = WidgetRuntime(engine, RecordingListener())
+        val runtime = WidgetRuntime(engine) { ch, p -> messages.add(ch to p) }
 
         val err = runtime.boot("iid-1", "RUNTIME;", "WIDGET;", "WIDGET_CODE;")
 
@@ -35,7 +30,7 @@ class WidgetRuntimeTest {
     @Test
     fun `boot escapes iid quotes`() {
         val engine = FakeJsEngine()
-        val runtime = WidgetRuntime(engine, RecordingListener())
+        val runtime = WidgetRuntime(engine) { ch, p -> messages.add(ch to p) }
 
         runtime.boot("a\"b\\c", "", "", "")
 
@@ -45,7 +40,7 @@ class WidgetRuntimeTest {
     @Test
     fun `boot returns the first eval error and stops`() {
         val engine = FakeJsEngine().apply { errors["bootstrap-widget.js"] = "boom" }
-        val runtime = WidgetRuntime(engine, RecordingListener())
+        val runtime = WidgetRuntime(engine) { ch, p -> messages.add(ch to p) }
 
         val err = runtime.boot("iid-1", "RUNTIME;", "WIDGET;", "WIDGET_CODE;")
 
@@ -56,22 +51,21 @@ class WidgetRuntimeTest {
     @Test
     fun `render message reaches the registered handler`() {
         val engine = FakeJsEngine()
-        val listener = RecordingListener()
-        val runtime = WidgetRuntime(engine, listener)
+        val runtime = WidgetRuntime(engine) { ch, p -> messages.add(ch to p) }
 
         runtime.onJsMessage("__jsr_render", "{\"type\":\"text\"}")
         runtime.onJsMessage("__jsr_set_title", "Hello")
 
         assertEquals(
             listOf("__jsr_render" to "{\"type\":\"text\"}", "__jsr_set_title" to "Hello"),
-            listener.messages,
+            messages,
         )
     }
 
     @Test
     fun `dispose releases the engine`() {
         val engine = FakeJsEngine()
-        val runtime = WidgetRuntime(engine, RecordingListener())
+        val runtime = WidgetRuntime(engine) { ch, p -> messages.add(ch to p) }
 
         runtime.dispose()
 
