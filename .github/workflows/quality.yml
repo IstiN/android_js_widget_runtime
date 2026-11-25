@@ -113,7 +113,8 @@ jobs:
             adb shell "ls -R /sdcard/Android/media/com.test.jsr 2>/dev/null; ls /sdcard/Android/data/com.test.jsr/files 2>/dev/null" || true
             adb logcat -d -s ConformanceResult || true
             mkdir -p app/build/reports/conformance
-            for f in $(adb shell run-as com.test.jsr ls files/conformance 2>/dev/null | tr -d '\r'); do adb exec-out run-as com.test.jsr cat "files/conformance/$f" > "app/build/reports/conformance/$f"; done
+            adb shell run-as com.test.jsr ls -la /data/user/0/com.test.jsr/files/conformance || true
+            for f in $(adb shell run-as com.test.jsr ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out run-as com.test.jsr cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
 
       - name: Collect results
@@ -207,7 +208,8 @@ jobs:
             adb shell "ls -R /sdcard/Android/media/com.test.jsr 2>/dev/null; ls /sdcard/Android/data/com.test.jsr/files 2>/dev/null" || true
             adb logcat -d -s ConformanceResult || true
             mkdir -p app/build/reports/conformance
-            for f in $(adb shell run-as com.test.jsr ls files/conformance 2>/dev/null | tr -d '\r'); do adb exec-out run-as com.test.jsr cat "files/conformance/$f" > "app/build/reports/conformance/$f"; done
+            adb shell run-as com.test.jsr ls -la /data/user/0/com.test.jsr/files/conformance || true
+            for f in $(adb shell run-as com.test.jsr ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out run-as com.test.jsr cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
             ls app/build/reports/conformance/ || true
 
       - name: Collect results
