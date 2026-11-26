@@ -114,7 +114,7 @@ jobs:
           # vCPU и меньше давление на system_server.
           target: default
           arch: x86_64
-          emulator-options: -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
           # TCG-эмулятор падает в adb-шаге отключения анимаций (broken pipe);
           # драйвер шлёт MotionEvent напрямую, анимации не нужны.
           disable-animations: false
@@ -129,7 +129,7 @@ jobs:
           api-level: 24
           target: default
           arch: x86_64
-          emulator-options: -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
           disable-animations: false
           script: bash scripts/emu-run.sh hello,counter,scroll_list 1200
 
@@ -228,7 +228,7 @@ jobs:
           api-level: 24
           target: default
           arch: x86_64
-          emulator-options: -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
           disable-animations: false
           script: bash scripts/emu-run.sh ${{ steps.list.outputs.filter }} 1200
 
@@ -241,7 +241,7 @@ jobs:
           api-level: 24
           target: default
           arch: x86_64
-          emulator-options: -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
           disable-animations: false
           script: bash scripts/emu-run.sh ${{ steps.list.outputs.filter }} 1200
 
