@@ -103,7 +103,10 @@ jobs:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
           api-level: 24
-          target: google_apis
+          # AOSP image без GMS: под TCG меньше фоновых сервисов на единственном
+          # vCPU (медленные VM давали 85-150 с/фикстуру) и меньше давление на
+          # system_server ("System has crashed" прогона 45729893709 shard 5).
+          target: default
           arch: x86_64
           # TCG-эмулятор падает в adb-шаге отключения анимаций (broken pipe);
           # драйвер шлёт MotionEvent напрямую, анимации не нужны.
@@ -117,20 +120,21 @@ jobs:
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             # Run the instrumentation DIRECTLY (no gradle connected task: it
             # uninstalls the app afterwards and deletes every app-private
-            # result location). The runner writes result.json to the internal
-            # files dir; collect it as root while the app is still installed.
-            # One line per command: the action runs the script line by line.
-            # timeout 600 + -e timeout 120000: a hung fixture (run 45710683703,
-            # shards 0/2 hung >60 min in this step) fails fast with the
-            # instrument tail instead of burning the job budget.
-            timeout 600 adb shell am instrument -w -e timeout 120000 -e fixtureFilter hello,counter,scroll_list com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -20 instrument.log
-            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
-            adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
-            mkdir -p app/build/reports/conformance
-            for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
-            ls app/build/reports/conformance/ || true
-            # Evidence artifact: driver/renderer/recorder logcat of the run.
+            # result location). One line per command: the action runs the
+            # script line by line. timeout 1200 covers 3 seed fixtures even on
+            # the slowest observed TCG VM (85-150 s/fixture, run 45729893709).
+            timeout 1200 adb shell am instrument -w -e timeout 120000 -e fixtureFilter hello,counter,scroll_list com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1 || true
+            tail -20 instrument.log
+            # Evidence BEFORE the pass/fail guard: a failed job must carry
+            # logcat, instrument.log and the partial result.json files —
+            # the "System has crashed" shard of run 45729893709 shipped no
+            # evidence because the script exited at the grep guard first.
             adb logcat -d > logcat.txt 2>&1 || true
+            timeout 60 adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance > conffiles.txt 2>&1 || true
+            mkdir -p app/build/reports/conformance
+            for f in $(cat conffiles.txt | tr -d '\r'); do timeout 30 adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f" || rm -f "app/build/reports/conformance/$f"; done
+            ls app/build/reports/conformance/ || true
+            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
             tail -3 logcat.txt
 
       - name: Collect results
@@ -158,22 +162,24 @@ jobs:
           name: conformance-android
           path: |
             conformance-android.md
+            instrument.log
             logcat.txt
             app/build/reports/conformance/
           if-no-files-found: warn
 
   # План 6.1 A3: L0-набор фикстур (одна на каждый зарегистрированный тип).
-  # Матрица из 6 шард (A3b: было 4 — шард 0/2 упирались в бюджет ~30 мин из-за
-  # вариации загрузки TCG-эмулятора, run 45710683703). TCG без KVM, ~4.6 c на
-  # фикстуру в инструментальных тестах + загрузка эмулятора 6-60 мин.
-  # 6 шард по ~14 фикстур: типичный job ~11 мин, хвост < 30 мин.
+  # 13 шард по 6-7 фикстур (A3c): самая медленная наблюдаемая TCG-VM делала
+  # фикстуру за 85-150 с (прогон 45729893709, шард 0: 7/14, шард 2: 4/15 за
+  # 600 с) — окно инструментария 1200 с покрывает 7 фикстур с запасом,
+  # типичная VM (~3-8 с/фикстуру) укладывается в минуты. max-parallel 4:
+  # очередь из 13 шард не растягивает прогон.
   conformance-l0:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v4
 
@@ -201,7 +207,7 @@ jobs:
         run: |
           all=$(ls .conformance/js_widget_runtime/docs/conformance/fixtures | grep '^l0_' | sort)
           echo "total=$(echo "$all" | wc -l)"
-          filter=$(echo "$all" | awk -v s=${{ matrix.shard }} -v t=6 'NR % t == s' | paste -sd,)
+          filter=$(echo "$all" | awk -v s=${{ matrix.shard }} -v t=13 'NR % t == s' | paste -sd,)
           count=$(echo "$filter" | tr ',' '\n' | wc -l)
           echo "fixtures=$count"
           echo "filter=$filter" >> "$GITHUB_OUTPUT"
@@ -218,7 +224,8 @@ jobs:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
           api-level: 24
-          target: google_apis
+          # Same AOSP image rationale as the seeds job (TCG load, crash 5).
+          target: default
           arch: x86_64
           disable-animations: false
           script: |
@@ -226,20 +233,22 @@ jobs:
             # daemon restart inside the TCG emulator; same as the seeds job).
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            # Same as the seeds job: direct am instrument (gradle's connected
-            # task uninstalls the app and wipes the results), collect the
-            # internal files as root; one line per command.
-            # timeout 600 + -e timeout 120000: a hung fixture fails fast with
-            # the instrument tail (run 45710683703 shards 0/2 hung >60 min).
-            timeout 600 adb shell am instrument -w -e timeout 120000 -e fixtureFilter ${{ steps.list.outputs.filter }} com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -20 instrument.log
-            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
-            adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
-            mkdir -p app/build/reports/conformance
-            for f in $(adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance | tr -d '\r'); do adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f"; done
-            ls app/build/reports/conformance/ || true
-            # Evidence artifact: driver/renderer/recorder logcat of the run.
+            # timeout 1200 is sized to the shard, not blind: the slowest
+            # observed TCG VM ran 85-150 s per fixture (run 45729893709,
+            # shards 0/2 were killed by the old 600 s cap mid-run at 7/14 and
+            # 4/15 fixtures), so 6-7 fixtures fit with headroom; a typical VM
+            # needs ~1 min. -e timeout 120000 stays the per-test bound.
+            timeout 1200 adb shell am instrument -w -e timeout 120000 -e fixtureFilter ${{ steps.list.outputs.filter }} com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1 || true
+            tail -20 instrument.log
+            # Evidence BEFORE the pass/fail guard (same as the seeds job):
+            # a failed shard must carry logcat, instrument.log and the
+            # partial result.json files for root-cause analysis.
             adb logcat -d > logcat.txt 2>&1 || true
-            tail -3 logcat.txt
+            timeout 60 adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance > conffiles.txt 2>&1 || true
+            mkdir -p app/build/reports/conformance
+            for f in $(cat conffiles.txt | tr -d '\r'); do timeout 30 adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f" || rm -f "app/build/reports/conformance/$f"; done
+            ls app/build/reports/conformance/ || true
+            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
 
       - name: Collect results
         run: |
@@ -267,6 +276,7 @@ jobs:
           name: conformance-android-l0-shard${{ matrix.shard }}
           path: |
             conformance-android-l0.md
+            instrument.log
             logcat.txt
             app/build/reports/conformance/
           if-no-files-found: warn
