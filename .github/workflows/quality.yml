@@ -120,7 +120,10 @@ jobs:
             # result location). The runner writes result.json to the internal
             # files dir; collect it as root while the app is still installed.
             # One line per command: the action runs the script line by line.
-            adb shell am instrument -w -e fixtureFilter hello,counter,scroll_list com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -5 instrument.log
+            # timeout 600 + -e timeout 120000: a hung fixture (run 45710683703,
+            # shards 0/2 hung >60 min in this step) fails fast with the
+            # instrument tail instead of burning the job budget.
+            timeout 600 adb shell am instrument -w -e timeout 120000 -e fixtureFilter hello,counter,scroll_list com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -20 instrument.log
             grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
             adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
             mkdir -p app/build/reports/conformance
@@ -226,7 +229,9 @@ jobs:
             # Same as the seeds job: direct am instrument (gradle's connected
             # task uninstalls the app and wipes the results), collect the
             # internal files as root; one line per command.
-            adb shell am instrument -w -e fixtureFilter ${{ steps.list.outputs.filter }} com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -5 instrument.log
+            # timeout 600 + -e timeout 120000: a hung fixture fails fast with
+            # the instrument tail (run 45710683703 shards 0/2 hung >60 min).
+            timeout 600 adb shell am instrument -w -e timeout 120000 -e fixtureFilter ${{ steps.list.outputs.filter }} com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1; tail -20 instrument.log
             grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
             adb shell su 0 ls -la /data/user/0/com.test.jsr/files/conformance || true
             mkdir -p app/build/reports/conformance
