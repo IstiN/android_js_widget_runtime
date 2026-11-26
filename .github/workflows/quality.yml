@@ -97,45 +97,41 @@ jobs:
           ./gradlew assembleDebug assembleDebugAndroidTest
           ./gradlew --stop
 
-      - name: Run fixtures on the emulator
+      # TCG без KVM на раннере: наблюдаемые отказы гостя — полная заморозка
+      # VM (шард 0 прогона 45735253590: logcat молчит 18 минут) и SIGSEGV
+      # system_server при запуске активити (шарды 10 и 5). Гость
+      # невосстановим, поэтому шаг делает вторую попытку на СВЕЖЕМ эмуляторе;
+      # -cores 4 даёт MTTCG гостю больше хост-потоков против заморозок.
+      - name: Run fixtures on the emulator (attempt 1)
+        id: emu1
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
           api-level: 24
-          # AOSP image без GMS: под TCG меньше фоновых сервисов на единственном
-          # vCPU (медленные VM давали 85-150 с/фикстуру) и меньше давление на
-          # system_server ("System has crashed" прогона 45729893709 shard 5).
+          # AOSP image без GMS: меньше фоновых сервисов на единственном
+          # vCPU и меньше давление на system_server.
           target: default
           arch: x86_64
+          emulator-options: -cores 4
           # TCG-эмулятор падает в adb-шаге отключения анимаций (broken pipe);
           # драйвер шлёт MotionEvent напрямую, анимации не нужны.
           disable-animations: false
-          script: |
-            # Direct adb install of the APKs built BEFORE boot: a gradle
-            # invocation inside the emulator step starts a new daemon and
-            # competes with the TCG emulator for CPU (measured: run
-            # 45710683703, boot variance 6-60 min under load).
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            # Run the instrumentation DIRECTLY (no gradle connected task: it
-            # uninstalls the app afterwards and deletes every app-private
-            # result location). One line per command: the action runs the
-            # script line by line. timeout 1200 covers 3 seed fixtures even on
-            # the slowest observed TCG VM (85-150 s/fixture, run 45729893709).
-            timeout 1200 adb shell am instrument -w -e timeout 120000 -e fixtureFilter hello,counter,scroll_list com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1 || true
-            tail -20 instrument.log
-            # Evidence BEFORE the pass/fail guard: a failed job must carry
-            # logcat, instrument.log and the partial result.json files —
-            # the "System has crashed" shard of run 45729893709 shipped no
-            # evidence because the script exited at the grep guard first.
-            adb logcat -d > logcat.txt 2>&1 || true
-            timeout 60 adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance > conffiles.txt 2>&1 || true
-            mkdir -p app/build/reports/conformance
-            for f in $(cat conffiles.txt | tr -d '\r'); do timeout 30 adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f" || rm -f "app/build/reports/conformance/$f"; done
-            ls app/build/reports/conformance/ || true
-            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
-            tail -3 logcat.txt
+          script: bash scripts/emu-run.sh hello,counter,scroll_list 1200
+
+      - name: Run fixtures on the emulator (attempt 2)
+        if: steps.emu1.outcome == 'failure'
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_I_WANT_MY_TCG: 'yes'
+        with:
+          api-level: 24
+          target: default
+          arch: x86_64
+          emulator-options: -cores 4
+          disable-animations: false
+          script: bash scripts/emu-run.sh hello,counter,scroll_list 1200
 
       - name: Collect results
         run: |
@@ -160,6 +156,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: conformance-android
+          # Attempt 2 re-uploads over attempt 1's partial artifact.
+          overwrite: true
           path: |
             conformance-android.md
             instrument.log
@@ -218,37 +216,34 @@ jobs:
           ./gradlew assembleDebug assembleDebugAndroidTest
           ./gradlew --stop
 
-      - name: Run L0 fixtures on the emulator
+      # Same guest-failure rationale as the seeds job: a frozen or crashed
+      # TCG guest is unrecoverable, so the step re-rolls a fresh emulator.
+      - name: Run L0 fixtures on the emulator (attempt 1)
+        id: emu1
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
           api-level: 24
-          # Same AOSP image rationale as the seeds job (TCG load, crash 5).
           target: default
           arch: x86_64
+          emulator-options: -cores 4
           disable-animations: false
-          script: |
-            # Direct adb install of the APKs built BEFORE boot (no gradle
-            # daemon restart inside the TCG emulator; same as the seeds job).
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            # timeout 1200 is sized to the shard, not blind: the slowest
-            # observed TCG VM ran 85-150 s per fixture (run 45729893709,
-            # shards 0/2 were killed by the old 600 s cap mid-run at 7/14 and
-            # 4/15 fixtures), so 6-7 fixtures fit with headroom; a typical VM
-            # needs ~1 min. -e timeout 120000 stays the per-test bound.
-            timeout 1200 adb shell am instrument -w -e timeout 120000 -e fixtureFilter ${{ steps.list.outputs.filter }} com.test.jsr.test/androidx.test.runner.AndroidJUnitRunner > instrument.log 2>&1 || true
-            tail -20 instrument.log
-            # Evidence BEFORE the pass/fail guard (same as the seeds job):
-            # a failed shard must carry logcat, instrument.log and the
-            # partial result.json files for root-cause analysis.
-            adb logcat -d > logcat.txt 2>&1 || true
-            timeout 60 adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance > conffiles.txt 2>&1 || true
-            mkdir -p app/build/reports/conformance
-            for f in $(cat conffiles.txt | tr -d '\r'); do timeout 30 adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" > "app/build/reports/conformance/$f" || rm -f "app/build/reports/conformance/$f"; done
-            ls app/build/reports/conformance/ || true
-            grep -q "OK (" instrument.log || { tail -40 instrument.log; exit 1; }
+          script: bash scripts/emu-run.sh ${{ steps.list.outputs.filter }} 1200
+
+      - name: Run L0 fixtures on the emulator (attempt 2)
+        if: steps.emu1.outcome == 'failure'
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_I_WANT_MY_TCG: 'yes'
+        with:
+          api-level: 24
+          target: default
+          arch: x86_64
+          emulator-options: -cores 4
+          disable-animations: false
+          script: bash scripts/emu-run.sh ${{ steps.list.outputs.filter }} 1200
 
       - name: Collect results
         run: |
@@ -274,6 +269,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: conformance-android-l0-shard${{ matrix.shard }}
+          # Attempt 2 re-uploads over attempt 1's partial artifact.
+          overwrite: true
           path: |
             conformance-android-l0.md
             instrument.log
