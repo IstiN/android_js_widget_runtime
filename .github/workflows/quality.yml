@@ -85,11 +85,12 @@ jobs:
         with:
           node-version: '22'
 
-      # Версия экшена не проверена локально (план 556). История: api 24 глох
-      # на GH Actions только из-за отсутствия TCG-флага (первый запуск был
-      # без ANDROID_I_WANT_MY_TCG; та же причина, что и "Software CPU
-      # emulation is not supported"); api 30 под TCG грузится, но
-      # system_server умирает под нагрузкой. Итог: api 24 (minSdk) + TCG.
+      # Версия экшена не проверена локально (план 556). История образов:
+      # api 24 глох на GH Actions из-за отсутствия TCG-флага (первый запуск
+      # был без ANDROID_I_WANT_MY_TCG); под TCG api 24 стал клинить гостя
+      # на ProgressBar (см. комментарий к api-level), api 30 гибли до
+      # -cores 4/сборки до бута/переписи улик. Итог: api 30 (плановый
+      # fallback, план 535) + TCG + -cores 4.
       # TCG-эмулятор хрупок по памяти: собираем APK до загрузки эмулятора
       # и гасим Gradle-демон, чтобы сборка не шла параллельно с живым эмулятором.
       - name: Build APKs before boot
@@ -109,7 +110,13 @@ jobs:
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
-          api-level: 24
+          # API 30 (плановый fallback, план 535): API 24 TCG клинит гостя на
+          # ProgressBar — circular stuck в каждой попытке трёх прогонов
+          # (45735253590, 45739152252, 45746152691), linear — дважды; результат
+          # фикстуры при этом пишется полностью, гость умирает после. Старый
+          # отказ api 30 (45659874971) был до -cores 4, сборки APK до бута и
+          # evidence-переписи.
+          api-level: 30
           # AOSP image без GMS: меньше фоновых сервисов на единственном
           # vCPU и меньше давление на system_server.
           target: default
@@ -126,7 +133,13 @@ jobs:
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
-          api-level: 24
+          # API 30 (плановый fallback, план 535): API 24 TCG клинит гостя на
+          # ProgressBar — circular stuck в каждой попытке трёх прогонов
+          # (45735253590, 45739152252, 45746152691), linear — дважды; результат
+          # фикстуры при этом пишется полностью, гость умирает после. Старый
+          # отказ api 30 (45659874971) был до -cores 4, сборки APK до бута и
+          # evidence-переписи.
+          api-level: 30
           target: default
           arch: x86_64
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
@@ -225,7 +238,13 @@ jobs:
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
-          api-level: 24
+          # API 30 (плановый fallback, план 535): API 24 TCG клинит гостя на
+          # ProgressBar — circular stuck в каждой попытке трёх прогонов
+          # (45735253590, 45739152252, 45746152691), linear — дважды; результат
+          # фикстуры при этом пишется полностью, гость умирает после. Старый
+          # отказ api 30 (45659874971) был до -cores 4, сборки APK до бута и
+          # evidence-переписи.
+          api-level: 30
           target: default
           arch: x86_64
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
@@ -238,7 +257,13 @@ jobs:
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
-          api-level: 24
+          # API 30 (плановый fallback, план 535): API 24 TCG клинит гостя на
+          # ProgressBar — circular stuck в каждой попытке трёх прогонов
+          # (45735253590, 45739152252, 45746152691), linear — дважды; результат
+          # фикстуры при этом пишется полностью, гость умирает после. Старый
+          # отказ api 30 (45659874971) был до -cores 4, сборки APK до бута и
+          # evidence-переписи.
+          api-level: 30
           target: default
           arch: x86_64
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -cores 4
