@@ -160,7 +160,7 @@ class ConformanceRunner(private val fixtureId: String) {
                 }
                 bootError[0] = runtime.boot("android-conformance", runtimeJs, widgetJs, code)
             }
-            instr.waitForIdleSync()
+            idleBounded(instr)
 
             if (bootError[0] != null) {
                 writeResult(target, fixtureId, recorder, null, null, bootError[0])
@@ -177,9 +177,9 @@ class ConformanceRunner(private val fixtureId: String) {
             )
             if (actionError != null) Log.e(TAG, actionError)
 
-            instr.waitForIdleSync()
+            idleBounded(instr)
             settle(400)
-            instr.waitForIdleSync()
+            idleBounded(instr)
 
             writeResult(target, fixtureId, recorder, initialDump, dumpOf(instr), actionError)
             disposeOnMain(instr, timersBox, engineBox)
@@ -202,14 +202,14 @@ class ConformanceRunner(private val fixtureId: String) {
             Log.i(TAG, "action ${action}")
             if (action.has("wait")) {
                 settle(action.getLong("wait"))
-                instr.waitForIdleSync()
+                idleBounded(instr)
                 continue
             }
             val error = applyOne(instr, action, renderer)
             if (error != null) return error
-            instr.waitForIdleSync()
+            idleBounded(instr)
             settle(250) // микрозадачи resolve и последующий рендер
-            instr.waitForIdleSync()
+            idleBounded(instr)
         }
         return null
     }
@@ -263,6 +263,22 @@ class ConformanceRunner(private val fixtureId: String) {
 
     private fun settle(ms: Long) {
         SystemClock.sleep(ms)
+    }
+
+    /**
+     * waitForIdleSync без таймаута в API: вечно анимирующийся View —
+     * неопределённый индикатор прогресса (l0_circular_progress_indicator) —
+     * не даёт очереди главного потока опустеть, и синхронный вызов вешает
+     * фикстуру до конца окна инструментария (заморозка гостя под TCG:
+     * прогоны 45735253590 shard 0 и 45739152252 shard 0, обе попытки).
+     * Ждём покой не дольше 2 c; поток-сирота завершится сам, когда
+     * ActivityScenario закроет activity и анимация остановится.
+     */
+    private fun idleBounded(instr: android.app.Instrumentation, ms: Long = 2000) {
+        val waiter = Thread { instr.waitForIdleSync() }
+        waiter.isDaemon = true
+        waiter.start()
+        waiter.join(ms)
     }
 
     private fun disposeOnMain(
