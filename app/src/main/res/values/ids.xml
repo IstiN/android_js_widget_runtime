@@ -2,4 +2,7 @@
 <resources>
     <!-- Тег корневого View узла AUI: setTag(R.id.jsr_node_id, "n<i>") -->
     <item name="jsr_node_id" type="id" />
+    <!-- Флаг глушения событий слушателей при программной настройке view
+         (patch-путь и путь драйвера не должны эмитить onChange). -->
+    <item name="jsr_emit_silent" type="id" />
 </resources>

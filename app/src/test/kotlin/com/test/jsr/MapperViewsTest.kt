@@ -1,7 +1,9 @@
 package com.test.jsr
 
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -173,6 +175,92 @@ class MapperViewsTest {
         val ink = viewOf("inkWell", """{"onPressed":"iw"}""")
         tap(ink)
         assertEquals(listOf("iw" to "{}"), actions)
+    }
+
+    // ---------- review NodeMappers.kt:210: input family из реального взаимодействия ----------
+
+    @Test
+    fun `checkbox switch and radio emit change from a real click`() {
+        val cb = viewOf("checkbox", """{"value":false,"label":"cb","onChange":"ch"}""") as CheckBox
+        cb.performClick()
+        assertEquals(listOf("ch" to """{"value":true}"""), actions)
+        actions.clear()
+        cb.performClick()
+        assertEquals(listOf("ch" to """{"value":false}"""), actions)
+        actions.clear()
+
+        val sw = viewOf("switch", """{"value":false,"onChange":"sw"}""") as android.widget.Switch
+        sw.performClick()
+        assertEquals(listOf("sw" to """{"value":true}"""), actions)
+        actions.clear()
+
+        val rd = viewOf("radio", """{"value":"a","groupValue":"","label":"L0","onChange":"rd"}""") as RadioButton
+        rd.performClick()
+        assertEquals(listOf("rd" to """{"value":"a"}"""), actions) // value узла, как в референсе
+    }
+
+    @Test
+    fun `slider emits the dragged value and stays silent on programmatic set`() {
+        val bar = viewOf("slider", """{"min":0,"max":1,"value":0.0,"onChange":"sl"}""") as SeekBar
+        bar.layout(0, 0, 300, 40)
+        touch(bar, 10f, MotionEvent.ACTION_DOWN)
+        touch(bar, 200f, MotionEvent.ACTION_MOVE)
+        assertTrue(actions.isNotEmpty())
+        assertEquals("sl", actions.last().first)
+        assertTrue(JSONObject(actions.last().second).getDouble("value") in 0.0..1.0)
+
+        actions.clear()
+        bar.emitSuppressed = true
+        bar.progress = 50
+        bar.emitSuppressed = false
+        assertEquals(0, actions.size)
+    }
+
+    @Test
+    fun `dropdown emits the picked item through the view listener`() {
+        val dd = viewOf("dropdown", """{"options":["Alpha","Beta"],"value":"Alpha","onChange":"dd"}""") as android.widget.Spinner
+        dd.onItemSelectedListener!!.onItemSelected(dd, dd, 1, 1)
+        assertEquals(listOf("dd" to """{"value":"Beta"}"""), actions)
+    }
+
+    @Test
+    fun `text field emits onChange on typing and onSubmitted on done`() {
+        val field = viewOf("textField", """{"initialValue":"V","onChange":"ch","onSubmit":"sb"}""") as EditText
+        field.text.insert(field.text.length, "x") // печатная правка через Editable
+        assertEquals(listOf("ch" to """{"value":"Vx"}"""), actions)
+        actions.clear()
+        field.onEditorAction(EditorInfo.IME_ACTION_DONE) // путь IME done
+        assertEquals(listOf("sb" to """{"value":"Vx"}"""), actions)
+        actions.clear()
+
+        // Mount/patch-путь (setTextSilently) событие не эмитит.
+        setTextSilently(field, "reset")
+        assertEquals(0, actions.size)
+    }
+
+    @Test
+    fun `text area emits onChange on typing`() {
+        val area = viewOf("textArea", """{"onChange":"ta"}""") as EditText
+        area.text.insert(0, "q")
+        assertEquals(listOf("ta" to """{"value":"q"}"""), actions)
+    }
+
+    @Test
+    fun `input family without change events stays silent`() {
+        val cb = viewOf("checkbox", """{"value":false}""") as CheckBox
+        cb.performClick()
+        assertEquals(0, actions.size)
+        val field = viewOf("textField", """{"initialValue":""}""") as EditText
+        field.text.insert(0, "q")
+        assertEquals(0, actions.size)
+        val dd = viewOf("dropdown", """{"options":["Alpha"]}""") as android.widget.Spinner
+        assertEquals(null, dd.onItemSelectedListener)
+    }
+
+    private fun touch(view: View, x: Float, action: Int) {
+        val event = MotionEvent.obtain(0, android.os.SystemClock.uptimeMillis(), action, x, 20f, 0)
+        view.dispatchTouchEvent(event)
+        event.recycle()
     }
 
     // ---------- lists ----------

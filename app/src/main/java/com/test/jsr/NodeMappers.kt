@@ -4,12 +4,18 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -131,17 +137,19 @@ internal object TextMapper : NodeMapper {
             val bold = n.props.optString("fontWeight") in BOLD_WEIGHT_SET
             tv.setTypeface(null, if (bold) Typeface.BOLD else Typeface.NORMAL)
         },
-        "textField" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "textField" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val input = v as EditText
             input.hint = n.props.optString("hint")
-            input.setText(n.props.optString("initialValue"))
+            setTextSilently(input, n.props.optString("initialValue"))
+            bindTextEvents(input, n, sink)
         },
-        "textArea" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "textArea" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val input = v as EditText
             input.hint = n.props.optString("hint")
-            input.setText(n.props.optString("initialValue"))
+            setTextSilently(input, n.props.optString("initialValue"))
             input.setSingleLine(false)
             input.minLines = 3
+            bindTextEvents(input, n, sink)
         },
         "badge" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
             labelAt(v as ViewGroup, 0).text = NodeProps.textOf(n.props)
@@ -207,34 +215,67 @@ internal object InputMapper : NodeMapper {
             (v as Button).text = NodeProps.textOf(n.props)
             tapEvents(v, n, sink, "onTap", "onPressed", "onPress")
         },
-        "checkbox" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "checkbox" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val cb = v as CheckBox
+            cb.emitSuppressed = true
             cb.isChecked = n.props.optBoolean("value", false)
+            cb.emitSuppressed = false
             cb.text = NodeProps.textOf(n.props)
+            val action = changeAction(n)
+            if (action != null) cb.setOnCheckedChangeListener { _, checked ->
+                if (!cb.emitSuppressed) sink.onAction(action, NodeProps.valuePayload(checked))
+            }
         },
-        "switch" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "switch" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val sw = v as Switch
+            sw.emitSuppressed = true
             sw.isChecked = n.props.optBoolean("value", false)
+            sw.emitSuppressed = false
             sw.text = NodeProps.textOf(n.props)
+            val action = changeAction(n)
+            if (action != null) sw.setOnCheckedChangeListener { _, checked ->
+                if (!sw.emitSuppressed) sink.onAction(action, NodeProps.valuePayload(checked))
+            }
         },
-        "slider" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "slider" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val bar = v as SeekBar
             bar.max = 100
+            bar.emitSuppressed = true
             bar.progress = NodeProps.sliderProgress(n.props)
+            bar.emitSuppressed = false
+            val action = changeAction(n)
+            if (action != null) bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seek: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser) emitSlider(seek, progress, action, sink)
+                }
+
+                override fun onStartTrackingTouch(seek: SeekBar) = Unit
+
+                override fun onStopTrackingTouch(seek: SeekBar) = Unit
+            })
         },
-        "dropdown" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "dropdown" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val items = NodeProps.itemsOf(n.props)
             if (items.isNotEmpty()) {
                 val spinner = v as Spinner
                 spinner.adapter = ArrayAdapter(
                     v.context, android.R.layout.simple_spinner_dropdown_item, items)
                 spinner.setSelection(NodeProps.indexOfItem(items, n.props.optString("value")))
+                bindDropdownEvents(spinner, items, n, sink)
             }
         },
-        "radio" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+        "radio" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val rb = v as RadioButton
             rb.text = NodeProps.textOf(n.props)
+            rb.emitSuppressed = true
             rb.isChecked = NodeProps.radioChecked(n.props)
+            rb.emitSuppressed = false
+            val action = changeAction(n)
+            if (action != null) rb.setOnCheckedChangeListener { _, _ ->
+                if (rb.emitSuppressed) return@setOnCheckedChangeListener
+                // Референс шлёт value узла (не groupValue): {'value': value}.
+                sink.onAction(action, NodeProps.valuePayload(n.props.optString("value")))
+            }
         },
         "gestureDetector" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             tapEvents(v, n, sink, "onTap", "onPressed", "onPress")
@@ -393,6 +434,115 @@ private fun tapEvents(
 ) {
     val action = NodeProps.firstEvent(node.events, *keys) ?: return
     view.setOnClickListener { sink.onAction(action, NodeProps.payloadOf(node)) }
+}
+
+// ---------- input family: реальные слушатели пользователя (review NodeMappers.kt:210) ----------
+
+/**
+ * Глушение событий слушателей при программной настройке view: patch-путь
+ * пере-применяет mapper-конфигурацию, драйвер делает setText + собственный
+ * dispatch — ни тот, ни другой не должны эмитить onChange (референс не шлёт
+ * onChanged от rebuild/controller.text).
+ */
+internal var View.emitSuppressed: Boolean
+    get() = getTag(R.id.jsr_emit_silent) == true
+    set(value) = setTag(R.id.jsr_emit_silent, value)
+
+/** setText без события (TextField.onChanged референса не срабатывает от rebuild). */
+internal fun setTextSilently(input: EditText, text: String) {
+    input.emitSuppressed = true
+    input.setText(text)
+    input.emitSuppressed = false
+}
+
+/** Action id семейства изменений (референс _changeHandler): onChange ?? onChanged ?? onTap. */
+private fun changeAction(n: JsNode): String? =
+    NodeProps.firstEvent(n.events, "onChange", "onChanged", "onTap")
+
+/** Action id клавиатурного done текстовых узлов. */
+private fun submitAction(n: JsNode): String? =
+    NodeProps.firstEvent(n.events, "onSubmit", "onSubmitted")
+
+/** Программный drag ответа не шлёт (сравни референс: Slider.onChanged только от пользователя). */
+private fun emitSlider(seek: SeekBar, progress: Int, action: String, sink: NativeRenderer.EventSink) {
+    if (seek.emitSuppressed) return
+    sink.onAction(action, NodeProps.valuePayload(progress / 100.0))
+}
+
+/** TextWatcher -> onChange(value); IME done -> onSubmit(value); события из node.events. */
+private fun bindTextEvents(input: EditText, node: JsNode, sink: NativeRenderer.EventSink) {
+    if (!hasTextEvents(node)) return
+    bindTextWatcher(input, node, sink)
+    bindSubmit(input, node, sink)
+}
+
+private fun hasTextEvents(node: JsNode): Boolean =
+    changeAction(node) != null || submitAction(node) != null
+
+private fun bindTextWatcher(input: EditText, node: JsNode, sink: NativeRenderer.EventSink) {
+    val change = changeAction(node) ?: return
+    input.addTextChangedListener(object : TextWatcher {
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            emitTextChange(input, s, change, sink)
+        }
+
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+        override fun afterTextChanged(s: Editable?) = Unit
+    })
+}
+
+private fun bindSubmit(input: EditText, node: JsNode, sink: NativeRenderer.EventSink) {
+    val submit = submitAction(node) ?: return
+    input.setOnEditorActionListener { _, actionId, event ->
+        textSubmitted(input, submit, actionId, event, sink)
+    }
+}
+
+private fun emitTextChange(input: EditText, s: CharSequence?, change: String, sink: NativeRenderer.EventSink) {
+    if (input.emitSuppressed) return
+    sink.onAction(change, NodeProps.valuePayload(textOrEmpty(s)))
+}
+
+private fun textOrEmpty(s: CharSequence?): String {
+    s ?: return ""
+    return s.toString()
+}
+
+private fun textSubmitted(
+    input: EditText,
+    submit: String,
+    actionId: Int,
+    event: KeyEvent?,
+    sink: NativeRenderer.EventSink,
+): Boolean {
+    if (!isDoneAction(actionId, event)) return false
+    sink.onAction(submit, NodeProps.valuePayload(input.text.toString()))
+    return true
+}
+
+private fun isDoneAction(actionId: Int, event: KeyEvent?): Boolean =
+    actionId == EditorInfo.IME_ACTION_DONE || event?.keyCode == KeyEvent.KEYCODE_ENTER
+
+/** Выбор пункта Spinner -> onChange(item); начальный колбэк после setSelection глушится (position == last). */
+private fun bindDropdownEvents(
+    spinner: Spinner,
+    items: List<String>,
+    node: JsNode,
+    sink: NativeRenderer.EventSink,
+) {
+    val action = changeAction(node) ?: return
+    spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        private var last = spinner.selectedItemPosition
+
+        override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+            if (position == last) return
+            last = position
+            sink.onAction(action, NodeProps.valuePayload(items[position]))
+        }
+
+        override fun onNothingSelected(parent: AdapterView<*>) = Unit
+    }
 }
 
 /** TextView child at index (factories put labels before node children attach). */

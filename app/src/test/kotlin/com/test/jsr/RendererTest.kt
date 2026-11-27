@@ -1,13 +1,17 @@
 package com.test.jsr
 
+import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -180,5 +184,131 @@ class RendererTest {
         val host = renderer.viewOf("n1")
         assertTrue(host is HostContractView)
         assertEquals("n1", host!!.getTag(R.id.jsr_node_id))
+    }
+
+    // ---------- review NativeRenderer.kt:174: patch под scroll/listView родителем ----------
+
+    @Test
+    fun `insert under a scroll parent lands in the inner container`() {
+        val r1 = normalize("""{"type":"scroll","children":[{"type":"text","data":"one"}]}""")
+        val r2 = normalize(
+            """{"type":"scroll","children":[{"type":"text","data":"one"},{"type":"text","data":"two"}]}""",
+        )
+
+        renderer.render(r1)
+        renderer.render(r2) // IllegalStateException не поднят
+
+        val sv = renderer.allViews().filterIsInstance<ScrollView>().single()
+        assertEquals(1, sv.childCount) // только внутренний контейнер, никаких вторых прямых детей
+        val content = sv.getChildAt(0) as ViewGroup
+        assertEquals(2, content.childCount)
+        assertEquals("n2", content.getChildAt(1).getTag(R.id.jsr_node_id))
+        val dump = AuiDump.dump(r2, renderer::viewOf)
+        assertEquals("two", dump.getJSONArray("children").getJSONObject(1)
+            .getJSONObject("props").getString("data"))
+    }
+
+    @Test
+    fun `remove under a scroll parent drops the view from the container`() {
+        val r1 = normalize(
+            """{"type":"scroll","children":[{"type":"text","data":"one"},{"type":"text","data":"two"}]}""",
+        )
+        val r2 = normalize("""{"type":"scroll","children":[{"type":"text","data":"one"}]}""")
+
+        renderer.render(r1)
+        val sv = renderer.allViews().filterIsInstance<ScrollView>().single()
+        val removed = renderer.viewOf("n2")!!
+
+        renderer.render(r2)
+
+        val content = sv.getChildAt(0) as ViewGroup
+        assertEquals(1, content.childCount) // views-призраков нет
+        assertEquals(1, sv.childCount)
+        assertEquals(null, renderer.viewOf("n2"))
+        assertFalse(renderer.allViews().contains(removed))
+    }
+
+    @Test
+    fun `move under a scroll parent reorders inside the inner container`() {
+        val r1 = normalize(
+            """{"type":"scroll","children":[{"type":"text","key":"a","data":"A"},
+               {"type":"text","key":"b","data":"B"}]}""",
+        )
+        val r2 = normalize(
+            """{"type":"scroll","children":[{"type":"text","key":"b","data":"B"},
+               {"type":"text","key":"a","data":"A"}]}""",
+        )
+
+        renderer.render(r1)
+        renderer.render(r2)
+
+        val content = renderer.allViews().filterIsInstance<ScrollView>().single().getChildAt(0) as ViewGroup
+        assertEquals(2, content.childCount)
+        assertEquals(1, renderer.allViews().filterIsInstance<ScrollView>().single().childCount)
+        assertEquals("n1", content.getChildAt(0).getTag(R.id.jsr_node_id))
+        assertEquals("B", (content.getChildAt(0) as TextView).text.toString())
+        assertEquals("A", (content.getChildAt(1) as TextView).text.toString())
+    }
+
+    @Test
+    fun `insert move and remove under a listView parent act on the inner container`() {
+        val r1 = normalize("""{"type":"listView","children":[{"type":"text","data":"one"}]}""")
+        val r2 = normalize(
+            """{"type":"listView","children":[{"type":"text","data":"one"},{"type":"text","data":"two"}]}""",
+        )
+        val r3 = normalize("""{"type":"listView","children":[{"type":"text","data":"two"}]}""")
+
+        renderer.render(r1)
+        renderer.render(r2)
+        val sv = renderer.allViews().filterIsInstance<ScrollView>().single()
+        assertEquals(2, (sv.getChildAt(0) as ViewGroup).childCount)
+        assertEquals(1, sv.childCount)
+
+        renderer.render(r3)
+        val content = sv.getChildAt(0) as ViewGroup
+        assertEquals(1, content.childCount)
+        assertEquals("two", (content.getChildAt(0) as TextView).text.toString())
+        assertEquals(1, sv.childCount)
+    }
+
+    // ---------- review NativeRenderer.kt:185: UpdateProps доходит до каждого типа ----------
+
+    @Test
+    fun `update props reaches every mapper family with view identity kept`() {
+        val r1 = normalize(
+            """{"type":"column","children":[
+               {"type":"text","data":"t","style":{"fontSize":20}},
+               {"type":"appBar","title":"Old"},
+               {"type":"checkbox","value":false,"label":"cb","onChange":"ch"},
+               {"type":"slider","min":0,"max":1,"value":0.0,"onChange":"sl"},
+               {"type":"container","padding":0},
+               {"type":"opacity","opacity":1.0},
+               {"type":"divider","thickness":1}]}""",
+        )
+        val r2 = normalize(
+            """{"type":"column","children":[
+               {"type":"text","data":"t","style":{"fontSize":36}},
+               {"type":"appBar","title":"New"},
+               {"type":"checkbox","value":true,"label":"cb","onChange":"ch"},
+               {"type":"slider","min":0,"max":1,"value":1.0,"onChange":"sl"},
+               {"type":"container","padding":16,"decoration":{"color":"#FF0000"}},
+               {"type":"opacity","opacity":0.25},
+               {"type":"divider","thickness":3}]}""",
+        )
+
+        renderer.render(r1)
+        val textView = renderer.viewOf("n1") as TextView
+        renderer.render(r2)
+
+        assertSame(textView, renderer.viewOf("n1")) // view identity kept
+        assertEquals(54f, textView.textSize) // fontSize 36 * 1.5
+        assertEquals("New", ((renderer.viewOf("n2") as ViewGroup).getChildAt(0) as TextView).text.toString())
+        assertTrue((renderer.viewOf("n3") as CheckBox).isChecked)
+        assertEquals(100, (renderer.viewOf("n4") as SeekBar).progress)
+        assertEquals(24, renderer.viewOf("n5")!!.paddingLeft)
+        assertTrue(renderer.viewOf("n5")!!.background is android.graphics.drawable.GradientDrawable)
+        assertEquals(0.25f, renderer.viewOf("n6")!!.alpha)
+        assertEquals(4, renderer.viewOf("n7")!!.layoutParams.height) // thickness 3 лог. px * 1.5
+        assertEquals(0, actions.size) // патч не эмитит событий (suppress на программной настройке)
     }
 }

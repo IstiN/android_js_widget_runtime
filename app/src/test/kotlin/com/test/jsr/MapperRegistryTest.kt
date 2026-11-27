@@ -193,4 +193,12 @@ class MapperRegistryTest {
         assertEquals("#1E293B", NodeProps.decorationColor(props("""{"decoration":{"color":"#1E293B"}}""")))
         assertEquals("", NodeProps.decorationColor(props("""{"color":"#1E293B"}""")))
     }
+
+    @Test
+    fun `valuePayload matches the reference change payload shape`() {
+        assertEquals("""{"value":true}""", NodeProps.valuePayload(true))
+        assertEquals("""{"value":0.5}""", NodeProps.valuePayload(0.5))
+        assertEquals("""{"value":"Beta"}""", NodeProps.valuePayload("Beta"))
+        assertEquals("{\"value\":\"x\\ny\"}", NodeProps.valuePayload("x\ny"))
+    }
 }

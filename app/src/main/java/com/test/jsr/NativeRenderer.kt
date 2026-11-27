@@ -103,11 +103,26 @@ class NativeRenderer(
 
     private fun applyUpdate(op: PatchOp.UpdateProps) {
         val view = views[op.nodeId] ?: return
-        applyPropsDiff(view, records[op.nodeId], op.node)
+        updateView(view, op)
+        // records держит применённый узел: следующий diff сравнивается с ним.
+        records[op.nodeId] = op.node
+    }
+
+    private fun updateView(view: View, op: PatchOp.UpdateProps) {
+        if (view !is EditText) {
+            // Patch-путь пере-применяет mount-конфигурацию mapper'а (реестр
+            // идемпотентен) — review NativeRenderer.kt:185: без этого патч
+            // молча терял все не-текстовые props каждого типа.
+            NodeMapperRegistry.configure[op.node.type]?.invoke(view, op.node, sink)
+            return
+        }
+        // Печатный текст держится, пока не изменился initialValue
+        // (issue #2 п.3); полный mapper конфигурации затёр бы ввод.
+        updateInputContent(view, records[op.nodeId], op.node)
     }
 
     private fun applyInsert(op: PatchOp.InsertChild) {
-        parentView(op.parentId)?.let { parent ->
+        patchContainer(op.parentId)?.let { parent ->
             val view = inflate(op.node)
             parent.addView(view, op.index.coerceAtMost(parent.childCount))
         }
@@ -115,7 +130,7 @@ class NativeRenderer(
 
 
     private fun applyRemove(op: PatchOp.RemoveChild) {
-        parentView(op.parentId)?.let { parent -> removeSubtree(parent, op.nodeId) }
+        patchContainer(op.parentId)?.let { parent -> removeSubtree(parent, op.nodeId) }
     }
 
     private fun removeSubtree(parent: ViewGroup, nodeId: String) {
@@ -133,7 +148,7 @@ class NativeRenderer(
     }
 
     private fun applyMove(op: PatchOp.MoveChild) {
-        parentView(op.parentId)?.let { parent ->
+        patchContainer(op.parentId)?.let { parent ->
             val view = views[op.nodeId] ?: return
             parent.removeView(view)
             parent.addView(view, op.toIndex.coerceAtMost(parent.childCount))
@@ -173,22 +188,25 @@ class NativeRenderer(
 
     private fun parentView(nodeId: String): ViewGroup? = views[nodeId] as? ViewGroup
 
-    // ---------- обновление свойств без потери состояния (issue #2 п.3) ----------
-
-    private val PROPDIFF: Map<Class<out View>, (View, JsNode, JsNode?) -> Unit> = mapOf(
-        Button::class.java to { v, n, _ -> updateTextContent(v as Button, n) },
-        EditText::class.java to { v, n, old -> updateInputContent(v as EditText, old, n) },
-        TextView::class.java to { v, n, _ -> updateTextContent(v as TextView, n) },
-    )
-
-    private fun applyPropsDiff(view: View, old: JsNode?, new: JsNode) {
-        val handler = PROPDIFF[view.javaClass] ?: return
-        handler(view, new, old)
+    /**
+     * Контейнер, куда патч-операции кладут детей parent'а: mount и patch
+     * обязаны соглашаться (review NativeRenderer.kt:174). У scroll/listView
+     * дети живут во внутреннем LinearLayout (scrollChild), не в самом
+     * ScrollView — патч в сам ScrollView дал бы второй прямой ребёнок
+     * (IllegalStateException) или views-призраки. Платформенный инвариант:
+     * у ScrollView ровно один прямой ребёнок.
+     */
+    private fun patchContainer(nodeId: String): ViewGroup? {
+        val view = views[nodeId] as? ScrollView ?: return parentView(nodeId)
+        return view.getChildAt(0) as? ViewGroup
     }
+
+    // ---------- обновление свойств без потери состояния (issue #2 п.3) ----------
 
     /** EditText хранит текст, пока prop initialValue не изменился. */
     private fun updateInputContent(view: EditText, old: JsNode?, new: JsNode) {
-        if (initialValueChanged(old, new)) view.setText(new.props.optString("initialValue"))
+        view.hint = new.props.optString("hint")
+        if (initialValueChanged(old, new)) setTextSilently(view, new.props.optString("initialValue"))
     }
 
     private fun initialValueChanged(old: JsNode?, new: JsNode): Boolean {
@@ -198,10 +216,6 @@ class NativeRenderer(
 
     private fun differs(a: JSONObject, b: JSONObject, key: String): Boolean =
         b.has(key) && b.optString(key) != a.optString(key)
-
-    private fun updateTextContent(view: TextView, node: JsNode) {
-        view.text = NodeProps.textOf(node.props)
-    }
 
     // ---------- создание views (типы seed'ов; остальное — fallback) ----------
 

@@ -42,7 +42,9 @@ class InteractionDriver(
     /** input: onChange ?? onChanged with {"value": "<text>"}, text lives in the EditText. */
     fun input(nodeId: String, value: String): String? {
         val (node, field) = inputTarget(nodeId) ?: return missLog(inputMissReason("input", nodeId))
-        field.setText(value)
+        // Программный setText не эмитит onChange (TextWatcher глушится) —
+        // иначе событие задваивается с dispatchInput ниже.
+        setTextSilently(field, value)
         return dispatchInput(node, "onChange", "onChanged", valuePayload(value))
     }
 

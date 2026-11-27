@@ -10,10 +10,15 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import org.json.JSONObject
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.Future
 
 /** Android-реализации сервисов (issue #3); тонкие — CC <= 2, см. A1b-отчёт. */
 object AndroidHostServices {
@@ -85,9 +90,9 @@ class HttpURLConnectionHttp(
 ) : HttpService {
     override fun fetchJson(url: String, method: String, headers: Map<String, String>, onResult: (HttpResult) -> Unit) {
         executor.execute {
-            onResult(fetchViaConnection(url, method, headers) {
+            onResult(fetchViaConnection(url, method, headers, open = {
                 URL(url).openConnection() as HttpURLConnection
-            })
+            }))
         }
     }
 }
@@ -96,18 +101,31 @@ class HttpURLConnectionHttp(
  * Чистая логика запроса — открывается через [open] для JVM-тестов с
  * подменным HttpURLConnection. Тело разбирается как JSON (референс:
  * vm_default_handlers.dart); сетевые сбои и невалидный JSON дают __error.
+ * Таймауты обязательны (review AndroidHostServices.kt:100): значение 0 =
+ * бесконечность — один молчащий сервер навсегда занимает single-thread
+ * executor и все последующие fetch зависают.
  */
+internal const val HTTP_CONNECT_TIMEOUT_MS = 10_000
+internal const val HTTP_READ_TIMEOUT_MS = 30_000
+
 internal fun fetchViaConnection(
     url: String,
     method: String,
     headers: Map<String, String>,
     open: () -> HttpURLConnection,
+    connectTimeoutMs: Int = HTTP_CONNECT_TIMEOUT_MS,
+    readTimeoutMs: Int = HTTP_READ_TIMEOUT_MS,
 ): HttpResult = try {
     val connection = open()
+    connection.connectTimeout = connectTimeoutMs
+    connection.readTimeout = readTimeoutMs
     connection.requestMethod = method.uppercase()
     headers.forEach { (k, v) -> connection.setRequestProperty(k, v) }
     val stream = try {
         connection.inputStream
+    } catch (e: SocketTimeoutException) {
+        // Таймаут — не HTTP-ошибка с телом: текст сбоя обязан дойти до __error.
+        throw e
     } catch (e: IOException) {
         connection.errorStream
     }
@@ -138,16 +156,37 @@ class ProcessBuilderRunner(
     }
 }
 
-internal fun runCommand(cmd: String): ExecResult = try {
+/** Верхняя граница внешнего процесса (review AndroidHostServices.kt:100). */
+internal const val EXEC_TIMEOUT_SECONDS = 10L
+
+internal fun runCommand(cmd: String, timeoutSeconds: Long = EXEC_TIMEOUT_SECONDS): ExecResult = try {
     val process = ProcessBuilder(*cmd.split(" ").toTypedArray())
         .redirectErrorStream(false)
         .start()
-    val stdout = process.inputStream.bufferedReader().use { it.readText() }
-    val stderr = process.errorStream.bufferedReader().use { it.readText() }
-    ExecResult(process.waitFor(), stdout, stderr)
+    // Потоки читаются вне вызывающего потока: waitFor обязан ограничиваться,
+    // даже если ребёнок не закрывает pipe (иначе readText висит вечно).
+    val stdout = readAllAsync(process.inputStream)
+    val stderr = readAllAsync(process.errorStream)
+    if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+        process.destroyForcibly()
+        process.waitFor(1, TimeUnit.SECONDS)
+        ExecResult(-1, "", "exec '$cmd': timed out after ${timeoutSeconds}s (destroyed forcibly)")
+    } else {
+        ExecResult(
+            process.exitValue(),
+            stdout.get(2, TimeUnit.SECONDS),
+            stderr.get(2, TimeUnit.SECONDS),
+        )
+    }
 } catch (e: Exception) {
     ExecResult(-1, "", e.toString())
 }
+
+/** Чтение потока в общем пуле ForkJoin; вызывающий поток получает текст с границей ожидания. */
+private fun readAllAsync(stream: InputStream): Future<String> =
+    CompletableFuture.supplyAsync {
+        stream.bufferedReader().use { it.readText() }
+    }
 
 class ActivityOpenUrl(private val activity: Activity) : OpenUrlService {
     override fun open(url: String): Boolean = try {

@@ -33,6 +33,15 @@ internal object NodeProps {
     fun firstEvent(events: JSONObject, vararg keys: String): String? =
         keys.map { events.optString(it) }.firstOrNull { it.isNotEmpty() }
 
+    /** Wire payload of change/submit events: {"value": <bool>} (reference _changeHandler). */
+    fun valuePayload(value: Boolean): String = "{\"value\":$value}"
+
+    /** Wire payload of change/submit events: {"value": <double>} (slider). */
+    fun valuePayload(value: Double): String = "{\"value\":$value}"
+
+    /** Wire payload of change/submit events: {"value": "<string>"}. */
+    fun valuePayload(value: String): String = "{\"value\":" + JsStrings.quote(value) + "}"
+
     /** Tap events carry the payload prop of the node (default {}). */
     fun payloadOf(node: JsNode): String {
         val payload = node.props.optJSONObject("payload")
