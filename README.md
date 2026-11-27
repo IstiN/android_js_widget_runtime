@@ -1,56 +1,107 @@
-# android_js_widget_runtime — POC
+# android_js_widget_runtime
 
-Нативный Android-рандер jsr-виджетов (контракт `flutter_js_widget_runtime`)
-без Flutter: **QuickJS через JNI + JSON-дерево → Android Views**.
+Native Android renderer for jsr widgets (the contract of
+`flutter_js_widget_runtime`) without Flutter: **QuickJS via JNI + a JSON tree
+to Android Views**.
 
-Семья: контракт и протокол тестирования — [js_widget_runtime](https://github.com/IstiN/js_widget_runtime) (PROTOCOL.md), ядро движка — [js_runtime](https://github.com/IstiN/js_runtime), эталон — [flutter_js_widget_runtime](https://github.com/IstiN/flutter_js_widget_runtime). Соседи: [ios](https://github.com/IstiN/ios_js_widget_runtime) / [macos](https://github.com/IstiN/macos_js_widget_runtime) / [react](https://github.com/IstiN/react_js_widget_runtime).
+Family: contract and test protocol — [js_widget_runtime](https://github.com/IstiN/js_widget_runtime) (`PROTOCOL.md`), engine core — [js_runtime](https://github.com/IstiN/js_runtime), reference — [flutter_js_widget_runtime](https://github.com/IstiN/flutter_js_widget_runtime).
 
-Мотивация: на Tegra 2 (без NEON) Flutter-рендер упирается в CPU-пайплайн
-Skia — 117 мс только на LayerTree::Paint, 7 fps. Нативный рендер на том же
-устройстве рисует кадр за 8–12 мс (p50). Этот POC доказывает, что jsr-виджеты
-можно гонять на старом железе нативно.
+Motivation: on a Tegra 2 (no NEON) the Flutter renderer saturates the CPU
+pipeline in Skia — 117 ms in `LayerTree::Paint` alone, 7 fps. The native
+renderer on the same device paints a frame in 8–12 ms (p50). This repository
+proves that jsr widgets run natively on old hardware.
 
-## Архитектура
+## Architecture
 
 ```
 widget.js ──eval──▶ QuickJS (C, JNI) ──sendMessage('__jsr_render', tree)──▶
-▶ Kotlin NativeRenderer: JSON → Android Views ──▶ экран
+▶ Kotlin NativeRenderer: JSON → Android Views ──▶ screen
     ▲                                                  │
     └────── nativeCallEvent(actionId) ◀── onClick ─────┘
 ```
 
-- `app/src/main/cpp/quickjs/` — вендоренный QuickJS 2024-01-13
-  (из `~/git/quickjs_runtime/native/quickjs`, без quickjs-libc).
-- `quickjs_jni.c` — мост: `nativeCreate/nativeEval/nativeCallEvent`,
-  глобальная JS-функция `sendMessage(ch, json)` → `JsWidgetRuntime.onJsMessage`.
-- `bootstrap` (в MainActivity, POC-версия jsr API): `render`, `setTitle`,
-  `onEvent`, `console`, `setTimeout/setInterval`.
-- `NativeRenderer.kt` — подмножество нод: `center, column, row, text,
-  textButton, button, textField, sizedBox, padding, container, card,
-  scroll/listView, divider, spacer`; стили: fontSize/color/fontWeight,
-  background/borderRadius, margin/padding/width/height, spacing.
+- `app/src/main/cpp/quickjs/` — vendored QuickJS 2024-01-13 (no quickjs-libc).
+- `quickjs_jni.c` — bridge: `nativeCreate/nativeEval/nativeCallEvent`; the JS
+  global `sendMessage(ch, json)` feeds `JsWidgetRuntime.onJsMessage`.
+- `app/src/main/assets/jsr/bootstrap-*.js` — generated from the canonical
+  halves of `js_widget_runtime` (`scripts/sync-bootstrap.sh`; CI checks drift).
+- `ChannelHandlers.kt` — one handler per protocol channel, registered in a map;
+  capability gate through app manifest meta-data (`dev.fa1.jsr.NETWORK`, ...).
+- `HostServices.kt` / `AndroidHostServices.kt` — storage, secrets, HTTP,
+  assets, process runner behind small interfaces (in-memory defaults for tests).
+- `JsWidgetTree.kt` + `Reconciler.kt` — normalization and patch ops
+  (`updateProps`, `insertChild`, `removeChild`, `moveChild`, `replaceSubtree`);
+  views survive moves, `EditText` keeps text, `ScrollView` keeps offset.
+- `NativeRenderer.kt` — applies the patch ops to the View tree; every root
+  view carries `setTag(R.id.jsr_node_id, nodeId)`.
+- `NodeMappers.kt` — per-category mapper registry (issue #4): 38 node types
+  map to real Android views, 8 render a `HostContractView` container with a
+  host slot (`webView`, `three`, `scene3d`, `voxel`, `map`, `video`,
+  `audio`, `audio_player`), the rest render the reference fallback card with
+  the node id tag. See `docs/node-support.json` and `docs/node-semantics.md`.
+- `AuiDump.kt` / `InteractionDriver.kt` / `ConformanceRunner.kt` (androidTest)
+  — the AUI dump, the tap/input/scroll/swipe/wait/back driver and the fixture
+  runner that writes one `result.json` per fixture (plan 1.4 of the family).
 
-Тестовые виджеты: `assets/hello.js` (README-пример), `counter.js` (полный
-цикл тап→JS→перерендер), `scroll_list.js` (30 айтемов, нативный скролл).
+## Quality gate (plan 1.7)
 
-## Замеры на GT P7510 (Tegra 2, без NEON, Android 4.2.2 API 17)
+```sh
+./gradlew testDebugUnitTest createDebugUnitTestCoverageReport
+./gradlew -p .conformance/crap4kotlin installDist
+.conformance/crap4kotlin/build/install/crap4kotlin/bin/crap4kotlin \
+  app/src/main/java --coverage app/build/reports/coverage/test/debug/report.xml \
+  --threshold 8.0
+```
 
-| Метрика | Flutter (Skia) | Нативный jsr POC |
+Coverage comes from the JVM/Robolectric unit tests of the same job; a missing
+or empty coverage file fails the gate. Current maximum CRAP: 8.0
+(`Reconciler.valueEquals`, 100 % covered).
+
+## Conformance fixtures
+
+Fixtures are copied from the pinned `js_widget_runtime`
+(`conformance.lock`, `scripts/fetch-conformance.sh`) into the androidTest
+assets by the `conformanceFixtures` task. The `conformance` CI job runs the
+three seed fixtures on an emulator; the `conformance-l0` jobs run the L0 set.
+
+Local run (emulator must be booted separately; the CI image runs with TCG —
+`ANDROID_I_WANT_MY_TCG=yes` — because GitHub runners have no KVM):
+
+```sh
+bash scripts/fetch-conformance.sh
+./gradlew connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.fixtureFilter=hello,counter,scroll_list
+adb pull /sdcard/Android/data/com.test.jsr/files/conformance/. \
+  app/build/reports/conformance/
+node .conformance/js_widget_runtime/harness/harness.mjs compare \
+  --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+  --results app/build/reports/conformance --out-report conformance-android.md
+```
+
+The runner writes `result.json` to the AGP additional-output path and to
+`getExternalFilesDir`; on API 24 images the AGP pull is empty, hence the
+direct `adb pull`.
+
+## Minimum SDK
+
+`minSdk = 24`. The family device contract (Tegra 2, Android 4.2.2 = API 17)
+requires `minSdk <= 17`; the port is **deferred to issue
+[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6)**, not done
+in the current pull request: there is no API 17 emulator or device in this
+run to execute `Build.VERSION.SDK_INT`-guarded branches on, and untested
+branches are not shipped. Issue #6 holds the complete list of >API 17 APIs in
+the tree (lint `NewApi` evidence), the replacement for each, the proof of the
+port and the goal it blocks (`flutter_js_widget_runtime#9`).
+
+## Measurements on GT P7510 (Tegra 2, no NEON, Android 4.2.2 API 17)
+
+| Metric | Flutter (Skia) | Native jsr |
 |---|---|---|
-| Цикл тап→JS→перерендер | — | **14–24 мс** |
-| Кадр при скролле списка (p50) | ~143 мс на кадр | **8–12 мс** |
-| p90 / p99 | 166 / 249 мс | 28 / 40 мс |
+| Tap→JS→re-render cycle | — | **14–24 ms** |
+| Frame while scrolling a list (p50) | ~143 ms per frame | **8–12 ms** |
+| p90 / p99 | 166 / 249 ms | 28 / 40 ms |
 
-## Ограничения POC (осознанные)
-
-- Каждый `jsr.render` пересобирает дерево целиком (без диффинга) — для
-  production нужен reconcile-слой (аналог renderdiff Dart-версии).
-- `fetchJson/exec/secrets/rAF` — заглушки (мост ответов по id не подключён).
-- Нужен recycle-слой для больших списков (RecyclerView + ViewHolder-маппинг
-  на jsr-ноды).
-- dp = px×1.5 захардкожено (POC на hdpi-планшете).
-
-## Сборка и запуск
+## Build and run
 
 ```sh
 ./gradlew assembleDebug
@@ -58,4 +109,4 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.test.jsr/.MainActivity
 ```
 
-Требования: NDK 27+, CMake 3.22.1, JDK 17+.
+Requirements: NDK 27+, CMake 3.22.1, JDK 17+.

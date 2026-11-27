@@ -1,0 +1,399 @@
+[
+  {
+    "type": "absoluteFill",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "adaptive",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "align",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "animatedContainer",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "animatedOpacity",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "animatedPositioned",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "animatedSwitcher",
+    "status": "partial"
+  },
+  {
+    "type": "appBar",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "aspectRatio",
+    "status": "partial"
+  },
+  {
+    "reason": "host contract",
+    "type": "audio",
+    "status": "partial"
+  },
+  {
+    "reason": "host contract",
+    "type": "audio_player",
+    "status": "partial"
+  },
+  {
+    "type": "badge",
+    "status": "yes"
+  },
+  {
+    "type": "banner",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "blur",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "bottomAppBar",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "bottomSheet",
+    "status": "partial"
+  },
+  {
+    "type": "button",
+    "status": "yes"
+  },
+  {
+    "type": "card",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "carousel",
+    "status": "partial"
+  },
+  {
+    "type": "center",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "chart",
+    "status": "partial"
+  },
+  {
+    "type": "checkbox",
+    "status": "yes"
+  },
+  {
+    "type": "chip",
+    "status": "yes"
+  },
+  {
+    "type": "circle",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "circleAvatar",
+    "status": "partial"
+  },
+  {
+    "type": "circularProgressIndicator",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "clipRRect",
+    "status": "partial"
+  },
+  {
+    "type": "column",
+    "status": "yes"
+  },
+  {
+    "type": "container",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "datePicker",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "dialog",
+    "status": "partial"
+  },
+  {
+    "type": "divider",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "drawer",
+    "status": "partial"
+  },
+  {
+    "type": "dropdown",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "entrance",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "expanded",
+    "status": "partial"
+  },
+  {
+    "type": "fab",
+    "status": "yes"
+  },
+  {
+    "type": "fill",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "flChart",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "flexible",
+    "status": "partial"
+  },
+  {
+    "type": "gestureDetector",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "gridView",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "icon",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "iconButton",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "image",
+    "status": "partial"
+  },
+  {
+    "type": "inkWell",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "line",
+    "status": "partial"
+  },
+  {
+    "type": "linearProgressIndicator",
+    "status": "yes"
+  },
+  {
+    "type": "listTile",
+    "status": "yes"
+  },
+  {
+    "type": "listView",
+    "status": "yes"
+  },
+  {
+    "reason": "host contract",
+    "type": "map",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "markdown",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "navigationBar",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "navigationRail",
+    "status": "partial"
+  },
+  {
+    "type": "opacity",
+    "status": "yes"
+  },
+  {
+    "type": "outlinedButton",
+    "status": "yes"
+  },
+  {
+    "type": "padding",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "path",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "polygon",
+    "status": "partial"
+  },
+  {
+    "reason": "reference parity",
+    "type": "popupMenu",
+    "status": "partial"
+  },
+  {
+    "type": "radio",
+    "status": "yes"
+  },
+  {
+    "type": "rect",
+    "status": "yes"
+  },
+  {
+    "type": "row",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "safeArea",
+    "status": "partial"
+  },
+  {
+    "reason": "host contract",
+    "type": "scene3d",
+    "status": "partial"
+  },
+  {
+    "type": "scroll",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "searchBar",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "segmentedButton",
+    "status": "partial"
+  },
+  {
+    "type": "sizedBox",
+    "status": "yes"
+  },
+  {
+    "type": "slider",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "snackBar",
+    "status": "partial"
+  },
+  {
+    "type": "spacer",
+    "status": "yes"
+  },
+  {
+    "type": "stack",
+    "status": "yes"
+  },
+  {
+    "reason": "fallback",
+    "type": "svg",
+    "status": "partial"
+  },
+  {
+    "type": "switch",
+    "status": "yes"
+  },
+  {
+    "reason": "reference parity",
+    "type": "tabBar",
+    "status": "partial"
+  },
+  {
+    "type": "text",
+    "status": "yes"
+  },
+  {
+    "type": "textArea",
+    "status": "yes"
+  },
+  {
+    "type": "textButton",
+    "status": "yes"
+  },
+  {
+    "type": "textField",
+    "status": "yes"
+  },
+  {
+    "reason": "host contract",
+    "type": "three",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "timePicker",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "tooltip",
+    "status": "partial"
+  },
+  {
+    "reason": "host contract",
+    "type": "video",
+    "status": "partial"
+  },
+  {
+    "reason": "host contract",
+    "type": "voxel",
+    "status": "partial"
+  },
+  {
+    "reason": "host contract",
+    "type": "webView",
+    "status": "partial"
+  },
+  {
+    "reason": "fallback",
+    "type": "wrap",
+    "status": "partial"
+  }
+]

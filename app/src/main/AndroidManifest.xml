@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Тест-приложение: заявляет NETWORK (выборка данных) и право INTERNET. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      result.json writing to /sdcard/Android/media/<pkg>/additional_test_output
+      (the only location that survives the AGP uninstall after connected tests).
+      Runtime-granted by the CI emulator script; maxSdkVersion caps it to the
+      versions where it is still a thing (scoped storage drops it later).
+    -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <application
         android:label="JSR Native POC"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <meta-data android:name="dev.fa1.jsr.NETWORK" android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -12,5 +22,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+          Fixture-runner host: declared in the app manifest because
+          ActivityScenario resolves the component against the target package
+          manifest (com.test.jsr); a test-apk declaration expands to the
+          component com.test.jsr.test.ConformanceActivity, which never matches
+          the class com.test.jsr.ConformanceActivity (runs 45672139918,
+          45673792050). The class lives in androidTest and is loaded by the
+          instrumentation class loader.
+        -->
+        <activity android:name=".ConformanceActivity" android:exported="false" />
     </application>
 </manifest>
