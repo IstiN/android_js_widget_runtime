@@ -32,10 +32,19 @@ tail -20 instrument.log
 adb logcat -d > logcat.txt 2>&1 || true
 timeout 60 adb shell su 0 ls /data/user/0/com.test.jsr/files/conformance > conffiles.txt 2>&1 || true
 mkdir -p app/build/reports/conformance
-for f in $(cat conffiles.txt | tr -d '\r'); do
+# Only real result names are collected. When the guest hiccups, `su 0 ls`
+# prints its error text ("ls: /data/...: No such file…"); word-splitting that
+# output used to create stray files (run ce07399 shard 2: a file literally
+# named "ls:" sank the if:always() artifact upload with "Colon :" path error).
+while IFS= read -r f; do
+  f="${f%$'\r'}"
+  case "$f" in
+    *.result.json) ;;
+    *) continue ;;
+  esac
   timeout 30 adb exec-out su 0 cat "/data/user/0/com.test.jsr/files/conformance/$f" \
     > "app/build/reports/conformance/$f" || rm -f "app/build/reports/conformance/$f"
-done
+done < conffiles.txt
 ls app/build/reports/conformance/ || true
 
 # Vacuous-pass guard: am instrument prints "OK (n tests)" only when every
