@@ -288,8 +288,8 @@ internal object InputMapper : NodeMapper {
 
 internal object ListMapper : NodeMapper {
     override val factories = mapOf(
-        "scroll" to { c: Context -> scrollColumn(c) },
-        "listView" to { c: Context -> scrollColumn(c) },
+        "scroll" to { c: Context -> ScrollColumn(c) },
+        "listView" to { c: Context -> ScrollColumn(c) },
         "listTile" to { c: Context -> LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(c))
@@ -550,11 +550,22 @@ private fun labelAt(group: ViewGroup, index: Int): TextView = group.getChildAt(i
 
 private fun button(c: Context): Button = Button(c).apply { isAllCaps = false }
 
-/** Vertical scrolling column (scroll and listView). */
-private fun scrollColumn(c: Context): ScrollView {
-    val sv = ScrollView(c)
-    sv.addView(LinearLayout(c).apply { orientation = LinearLayout.VERTICAL }, ViewGroup.LayoutParams(-1, -2))
-    return sv
+/**
+ * Vertical scrolling column (scroll and listView). Публичное чтение
+ * защищённых scroll-метрик — AUI dump (A3) читает ровно
+ * computeVerticalScrollOffset / computeVerticalScrollRange.
+ */
+class ScrollColumn(context: Context) : ScrollView(context) {
+    init {
+        addView(
+            LinearLayout(context).apply { orientation = LinearLayout.VERTICAL },
+            ViewGroup.LayoutParams(-1, -2),
+        )
+    }
+
+    fun scrollOffsetPx(): Int = computeVerticalScrollOffset()
+
+    fun scrollRangePx(): Int = computeVerticalScrollRange()
 }
 
 private fun bar(c: Context): LinearLayout = LinearLayout(c).apply {

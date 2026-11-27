@@ -4,6 +4,9 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /** Равенство dump с нормализатором обвязки пина (harness/normalize.mjs). */
 class AuiDumpTest {
@@ -67,5 +70,65 @@ class AuiDumpTest {
         }
         a is Number && b is Number -> a.toDouble() == b.toDouble()
         else -> a == b
+    }
+}
+
+/**
+ * A3 (kit 68e149d): узел resolved-типа scroll несёт scrollOffset /
+ * scrollExtent / viewportExtent в логических px в каждом дампе; conversion
+ * device px -> logical по density. ScrollView в Robolectric.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "xhdpi") // density 2.0: conversion видно в числе
+class AuiDumpScrollTest {
+    private fun scrollNode(): JsNode = JsWidgetTree.normalize(
+        JSONObject("""{"type":"scroll","children":[{"type":"text","data":"L0 text"}]}"""),
+    )
+
+    private fun scrollOf(): ScrollColumn {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val sv = ScrollColumn(context)
+        val content = sv.getChildAt(0) as android.widget.LinearLayout
+        sv.layout(0, 0, 300, 400)
+        // Ребёнок ПОСЛЕ родителя: layout родителя пере-укладывает ребёнка в 400.
+        content.layout(0, 0, 300, 2000)
+        return sv
+    }
+
+    @Test
+    fun `scroll node dumps offset extent and viewport in logical px`() {
+        val sv = scrollOf()
+        sv.scrollTo(0, 600)
+
+        val props = AuiDump.dump(scrollNode(), viewOf = { if (it == "n0") sv else null })
+            .getJSONObject("props")
+
+        // density 2.0: device px 600/2000/400 -> logical 300/1000/200.
+        assertEquals(300.0, props.getDouble("scrollOffset"), 1e-6)
+        assertEquals(sv.scrollRangePx() / 2f, props.getDouble("scrollExtent").toFloat(), 1e-3f)
+        assertEquals(200.0, props.getDouble("viewportExtent"), 1e-6)
+    }
+
+    @Test
+    fun `unscrolled scroll node dumps zero offset and non-negative state`() {
+        val props = AuiDump.dump(scrollNode(), viewOf = { if (it == "n0") scrollOf() else null })
+            .getJSONObject("props")
+
+        assertEquals(0.0, props.getDouble("scrollOffset"), 1e-6)
+        assertTrue(props.getDouble("scrollExtent") >= 0.0)
+        assertTrue(props.getDouble("viewportExtent") >= 0.0)
+    }
+
+    @Test
+    fun `non scroll nodes carry no scroll props`() {
+        val sv = scrollOf()
+        val tree = JsWidgetTree.normalize(
+            JSONObject("""{"type":"column","children":[{"type":"text","data":"x"}]}"""),
+        )
+        val dump = AuiDump.dump(tree, viewOf = { if (it == "n0") sv else null })
+
+        assertEquals(false, dump.getJSONObject("props").has("scrollOffset"))
+        assertEquals(false, dump.getJSONObject("props").has("scrollExtent"))
+        assertEquals(false, dump.getJSONObject("props").has("viewportExtent"))
     }
 }

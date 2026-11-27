@@ -265,4 +265,36 @@ class DriverTest {
         assertEquals(MotionEvent.ACTION_UP, received.last())
         assertTrue(received.count { it == MotionEvent.ACTION_MOVE } >= 8)
     }
+
+    @Test
+    fun `swipe converts logical coordinates to device px by density`() {
+        val tree = mount("""{"type":"scroll","children":[{"type":"column","children":[]}]}""")
+        val xs = mutableListOf<Float>()
+        val ys = mutableListOf<Float>()
+        val sv = object : ScrollView(ApplicationProvider.getApplicationContext()) {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                xs.add(event.x)
+                ys.add(event.y)
+                return true
+            }
+        }
+        sv.addView(android.widget.LinearLayout(ApplicationProvider.getApplicationContext()))
+        views[tree.nodeId] = sv
+        val scaled = InteractionDriver(
+            views = { views[it] },
+            allViews = { views.values },
+            root = { root },
+            onAction = { a, p -> actions.add(a to p); null },
+            onHostEvent = { t, p -> hostEvents.add(t to p); null },
+            density = 2f,
+        )
+
+        scaled.swipe(10, 90, 30, 40, 100)
+
+        // Логические px фикстуры x density: x 10->30 лог. = 20->60 device, y 90->40 = 180->80.
+        assertEquals(20f, xs.first(), 1e-3f)
+        assertEquals(180f, ys.first(), 1e-3f)
+        assertEquals(60f, xs.last(), 1e-3f)
+        assertEquals(80f, ys.last(), 1e-3f)
+    }
 }

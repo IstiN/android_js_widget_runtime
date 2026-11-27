@@ -273,8 +273,19 @@ class NativeRenderer(
     }
 
     private fun handlerOf(view: View): ((View, View) -> Unit)? {
-        ATTACH[view.javaClass]?.let { return it }
+        attachEntry(view)?.let { return it }
         return ATTACH[ViewGroup::class.java]
+    }
+
+    /**
+     * Точное совпадение класса, КРОМЕ ScrollView: центр FrameLayout не
+     * применяется к его подклассам (stack/padding — FillLayout без
+     * центрирования), а ScrollColumn (scroll и listView) обязан
+     * прикреплять детей во внутреннюю колонку, как plain ScrollView.
+     */
+    private fun attachEntry(view: View): ((View, View) -> Unit)? {
+        if (view is ScrollView) return ATTACH[ScrollView::class.java]
+        return ATTACH[view.javaClass]
     }
 
     private fun scrollChild(sv: ScrollView, child: View) {

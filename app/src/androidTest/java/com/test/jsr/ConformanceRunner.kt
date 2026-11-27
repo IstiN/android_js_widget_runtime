@@ -259,7 +259,17 @@ class ConformanceRunner(private val fixtureId: String) {
         root = { renderer.rootNode() },
         onAction = { a, p -> onActionBox[0]?.invoke(a, p) },
         onHostEvent = { t, p -> onHostEventBox[0]?.invoke(t, p) },
+        density = density,
     )
+
+    /**
+     * Плотность дисплея: фикстурные координаты логические, жест в device px.
+     * displayMetrics читается без runOnMainSync (driver() зовётся на main).
+     */
+    private val density: Float by lazy {
+        InstrumentationRegistry.getInstrumentation()
+            .targetContext.resources.displayMetrics.density
+    }
 
     private fun settle(ms: Long) {
         SystemClock.sleep(ms)

@@ -19,6 +19,11 @@ import android.widget.ScrollView
  * (also written to logcat); the runner records it into result.json.error and
  * a fixture with an action error is a failure. Callbacks return the engine
  * error (or null) so eval failures surface the same way.
+ *
+ * Действия приходят в ЛОГИЧЕСКИХ px (координаты фикстуры — единицы
+ * референса Flutter, density 1); свайп конвертируется в device px
+ * (A3: свайп обязан реально прокрутить контейнер — при density > 1
+ * сырой gesture короче заданного в логических px).
  */
 class InteractionDriver(
     private val views: (String) -> View?,
@@ -26,6 +31,7 @@ class InteractionDriver(
     private val root: () -> JsNode?,
     private val onAction: (actionId: String, payloadJson: String) -> String?,
     private val onHostEvent: (target: String, payloadJson: String) -> String?,
+    private val density: Float = 1f,
 ) {
     /** Tap events: onTap ?? onPress ?? onPressed, payload = node.payload. */
     fun tap(selector: String): String? {
@@ -96,17 +102,24 @@ class InteractionDriver(
     fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, ms: Int): String? {
         val target = scrollTarget() ?: return missLog("swipe: no scroll target")
         val start = SystemClock.uptimeMillis()
-        target.dispatchTouchEvent(motionEvent(MotionEvent.ACTION_DOWN, start, x1.toFloat(), y1.toFloat()))
+        val dx1 = devPx(x1)
+        val dy1 = devPx(y1)
+        val dx2 = devPx(x2)
+        val dy2 = devPx(y2)
+        target.dispatchTouchEvent(motionEvent(MotionEvent.ACTION_DOWN, start, dx1.toFloat(), dy1.toFloat()))
         val steps = 10
         (1 until steps).forEach { i ->
             val t = i.toFloat() / steps
-            val x = x1 + (x2 - x1) * t
-            val y = y1 + (y2 - y1) * t
+            val x = dx1 + (dx2 - dx1) * t
+            val y = dy1 + (dy2 - dy1) * t
             target.dispatchTouchEvent(motionEvent(MotionEvent.ACTION_MOVE, start + (ms * t).toLong(), x, y))
         }
-        target.dispatchTouchEvent(motionEvent(MotionEvent.ACTION_UP, start + ms, x2.toFloat(), y2.toFloat()))
+        target.dispatchTouchEvent(motionEvent(MotionEvent.ACTION_UP, start + ms, dx2.toFloat(), dy2.toFloat()))
         return null
     }
+
+    /** Логические px -> device px (координаты фикстуры в единицах референса). */
+    private fun devPx(v: Int): Int = Math.round(v * density)
 
     /** Action wait: real time on every platform (name waitMs: Object.wait). */
     fun waitMs(ms: Long): String? {
