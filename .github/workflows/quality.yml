@@ -34,6 +34,14 @@ jobs:
           [ -x "$sdkmanager_dir/sdkmanager" ] || sdkmanager_dir="$ANDROID_HOME/tools/bin"
           yes | "$sdkmanager_dir/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
 
+      # mergeDebugAndroidTestAssets packs the fixtures of the js_widget_runtime
+      # pin into the androidTest APK (conformanceFixtures Copy). Without this
+      # fetch the Copy task is skipped as NO-SOURCE — silently, its doFirst
+      # require never fires — and the APK runs "OK (0 tests)" on every
+      # emulator job (run 45931827949).
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
       - name: Build APKs
         run: ./gradlew assembleDebug assembleDebugAndroidTest
 
