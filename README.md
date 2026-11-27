@@ -82,6 +82,17 @@ The runner writes `result.json` to the AGP additional-output path and to
 `getExternalFilesDir`; on API 24 images the AGP pull is empty, hence the
 direct `adb pull`.
 
+## Minimum SDK
+
+`minSdk = 24`. The family device contract (Tegra 2, Android 4.2.2 = API 17)
+requires `minSdk <= 17`; the port is **deferred to issue
+[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6)**, not done
+in the current pull request: there is no API 17 emulator or device in this
+run to execute `Build.VERSION.SDK_INT`-guarded branches on, and untested
+branches are not shipped. Issue #6 holds the complete list of >API 17 APIs in
+the tree (lint `NewApi` evidence), the replacement for each, the proof of the
+port and the goal it blocks (`flutter_js_widget_runtime#9`).
+
 ## Measurements on GT P7510 (Tegra 2, no NEON, Android 4.2.2 API 17)
 
 | Metric | Flutter (Skia) | Native jsr |

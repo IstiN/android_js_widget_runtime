@@ -27,8 +27,8 @@ const ANDROID = {
   container: ['LinearLayout + background', ['decoration.color', 'borderRadius', 'padding']],
   card: ['LinearLayout + rounded background', ['decoration.color or color', 'padding']],
   text: ['TextView', ['data', 'text', 'label', 'fontSize', 'color', 'fontWeight']],
-  textField: ['EditText', ['hint', 'initialValue']],
-  textArea: ['EditText multi-line', ['hint', 'initialValue']],
+  textField: ['EditText + TextWatcher/IME done', ['hint', 'initialValue', 'onChange', 'onChanged', 'onSubmitted']],
+  textArea: ['EditText multi-line + TextWatcher/IME done', ['hint', 'initialValue', 'onChange', 'onChanged', 'onSubmitted']],
   badge: ['FrameLayout + label overlay', ['label', 'data', 'text', 'backgroundColor']],
   chip: ['TextView rounded', ['label', 'data', 'text', 'onTap']],
   divider: ['View line', ['thickness', 'color']],
@@ -38,11 +38,11 @@ const ANDROID = {
   textButton: ['Button', ['data', 'text', 'label', 'onTap', 'onPressed', 'onPress', 'payload']],
   outlinedButton: ['Button', ['data', 'text', 'label', 'onTap', 'onPressed', 'onPress', 'payload']],
   fab: ['Button with round background', ['label', 'data', 'text', 'onTap', 'onPressed', 'onPress', 'payload']],
-  checkbox: ['CheckBox', ['value', 'label', 'data', 'text']],
-  switch: ['Switch', ['value']],
-  slider: ['SeekBar 0..100', ['value', 'min', 'max']],
-  dropdown: ['Spinner', ['items', 'options', 'value']],
-  radio: ['RadioButton', ['value', 'groupValue', 'label', 'data', 'text']],
+  checkbox: ['CheckBox + checked listener', ['value', 'label', 'data', 'text', 'onChange', 'onChanged']],
+  switch: ['Switch + checked listener', ['value', 'onChange', 'onChanged']],
+  slider: ['SeekBar 0..100 + seek listener', ['value', 'min', 'max', 'onChange', 'onChanged']],
+  dropdown: ['Spinner + item listener', ['items', 'options', 'value', 'onChange', 'onChanged']],
+  radio: ['RadioButton + checked listener', ['value', 'groupValue', 'label', 'data', 'text', 'onChange', 'onChanged']],
   gestureDetector: ['clickable FrameLayout', ['onTap', 'onPressed', 'onPress', 'payload']],
   inkWell: ['clickable FrameLayout', ['onTap', 'onPressed', 'onPress', 'payload']],
   scroll: ['ScrollView vertical column', []],
@@ -94,6 +94,15 @@ lines.push('`scripts/gen-node-semantics.mjs`; regenerate after mapper changes.')
 lines.push('');
 lines.push('Support status: `yes` = mapped to a real view; `partial` (host contract) =');
 lines.push('a host surface fills the slot; `partial` (fallback) = reference fallback card.');
+lines.push('');
+lines.push('## Minimum SDK');
+lines.push('');
+lines.push('`minSdk = 24`; the port to the family target device (Tegra 2, Android');
+lines.push('4.2.2 = API 17) is **deferred** — see issue');
+lines.push('[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6) with the');
+lines.push('complete >API 17 API list (including `View.setElevation` in the card factory');
+lines.push('below) and the replacements. No `Build.VERSION.SDK_INT` guards are added');
+lines.push('until the port itself lands: untested branches are not shipped.');
 lines.push('');
 
 for (const row of support) {
