@@ -21,6 +21,9 @@ object ConformanceResult {
             File(target.filesDir, "conformance"),
             File("/sdcard/Android/media/" + target.packageName + "/additional_test_output/conformance"),
             target.getExternalFilesDir(null)?.let { File(it, "conformance") },
+            // Локальный прогон на GT-P7510 (ROM multi-user 10 + permissive SELinux):
+            // adb не видит внешние каталоги приложения, /data/local/tmp — видит.
+            File("/data/local/tmp/conformance"),
         )
         dirs.forEach { dir -> writeQuietly(dir, fixtureId, json) }
     }
