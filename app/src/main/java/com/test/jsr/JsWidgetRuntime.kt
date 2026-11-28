@@ -18,7 +18,10 @@ class JsWidgetRuntime : JsEngine {
     }
 
     override fun eval(code: String, sourceName: String): String? {
-        check(handle != 0L) { "engine not started" }
+        // Локальный guard (прогон 19 примеров на GT-P7510): асинхронный
+        // ответ fetchJson может прийти после dispose фикстуры; бросок здесь
+        // валил весь instrumentation-процесс. Возвращаем ошибку как результат.
+        if (handle == 0L) return "engine not started (disposed)"
         return nativeEval(handle, code)
     }
 
