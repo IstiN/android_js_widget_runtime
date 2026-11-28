@@ -142,15 +142,48 @@ Java_com_test_jsr_JsWidgetRuntime_nativeEval(JNIEnv *env, jobject thiz,
     if (JS_IsException(result)) {
         JSValue exc = JS_GetException(jr->ctx);
         const char *msg = JS_ToCString(jr->ctx, exc);
-        jstring jerr = (*env)->NewStringUTF(env, msg ? msg : "unknown exception");
-        if (msg) JS_FreeCString(jr->ctx, msg);
+        jstring jerr;
+        if (msg) {
+            jerr = (*env)->NewStringUTF(env, msg);
+            JS_FreeCString(jr->ctx, msg);
+        } else {
+            // Локальная сборка (GT-P7510): понять, ЧТО за исключение —
+            // name и message по отдельности, безликое «unknown exception»
+            // не позволяет диагностировать сбои resolve-колбэков.
+            JSValue namev = JS_GetPropertyStr(jr->ctx, exc, "name");
+            JSValue msgv = JS_GetPropertyStr(jr->ctx, exc, "message");
+            JSValue stackv = JS_GetPropertyStr(jr->ctx, exc, "stack");
+            const char *nm = JS_ToCString(jr->ctx, namev);
+            const char *mm = JS_ToCString(jr->ctx, msgv);
+            const char *st = JS_ToCString(jr->ctx, stackv);
+            LOGE("nativeEval exception name=%s message=%s stack=%s",
+                 nm ? nm : "<null>", mm ? mm : "<null>", st ? st : "<null>");
+            char buf[512];
+            snprintf(buf, sizeof(buf), "exception %s: %s",
+                     nm ? nm : "?", mm ? mm : "?");
+            jerr = (*env)->NewStringUTF(env, buf);
+            if (nm) JS_FreeCString(jr->ctx, nm);
+            if (mm) JS_FreeCString(jr->ctx, mm);
+            if (st) JS_FreeCString(jr->ctx, st);
+            JS_FreeValue(jr->ctx, namev);
+            JS_FreeValue(jr->ctx, msgv);
+            JS_FreeValue(jr->ctx, stackv);
+        }
         JS_FreeValue(jr->ctx, exc);
         JS_FreeValue(jr->ctx, result);
         return jerr;
     }
     JS_FreeValue(jr->ctx, result);
-    // Прокрутить микротаски (промисы fetch/exec в POC резолвятся сразу).
-    { JSContext *pctx = NULL; JS_ExecutePendingJob(jr->rt, &pctx); (void)pctx; }
+    // Прокрутить ВСЕ микротаски (локальный фикс GT-P7510): прежний код
+    // выполнял ровно одну задачу — цепочки Promise (Promise.all -> .then
+    // -> jsr.render) в crypto/stocks/weather обрывались на первом звене,
+    // и виджеты навсегда оставались на спиннере загрузки.
+    {
+        JSContext *pctx = NULL;
+        int guard = 0;
+        while (JS_ExecutePendingJob(jr->rt, &pctx) > 0 && ++guard < 200) { }
+        (void)pctx;
+    }
     return NULL;
 }
 
@@ -193,7 +226,13 @@ Java_com_test_jsr_JsWidgetRuntime_nativeCallEvent(JNIEnv *env, jobject thiz,
         JS_FreeValue(jr->ctx, exc);
     }
     JS_FreeValue(jr->ctx, result);
-    { JSContext *pctx = NULL; JS_ExecutePendingJob(jr->rt, &pctx); (void)pctx; }
+    // Локальный фикс: дренировать всю очередь микрозадач (см. nativeEval).
+    {
+        JSContext *pctx = NULL;
+        int guard = 0;
+        while (JS_ExecutePendingJob(jr->rt, &pctx) > 0 && ++guard < 200) { }
+        (void)pctx;
+    }
 
     if (actionId) (*env)->ReleaseStringUTFChars(env, actionId, act);
     if (payloadJson) (*env)->ReleaseStringUTFChars(env, payloadJson, pl);
