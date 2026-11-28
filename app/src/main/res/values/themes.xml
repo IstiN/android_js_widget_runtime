@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 17-20: Holo — Material появляется в API 21 (issue #6). -->
+<resources>
+    <style name="JsrTheme" parent="@android:style/Theme.Holo.NoActionBar" />
+</resources>

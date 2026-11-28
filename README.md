@@ -84,14 +84,34 @@ direct `adb pull`.
 
 ## Minimum SDK
 
-`minSdk = 24`. The family device contract (Tegra 2, Android 4.2.2 = API 17)
-requires `minSdk <= 17`; the port is **deferred to issue
-[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6)**, not done
-in the current pull request: there is no API 17 emulator or device in this
-run to execute `Build.VERSION.SDK_INT`-guarded branches on, and untested
-branches are not shipped. Issue #6 holds the complete list of >API 17 APIs in
-the tree (lint `NewApi` evidence), the replacement for each, the proof of the
-port and the goal it blocks (`flutter_js_widget_runtime#9`).
+`minSdk = 17` — the family device contract (Tegra 2, Android 4.2.2 = API 17),
+closed by the port (issue
+[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6)). Every
+>API 17 API is replaced or `Build.VERSION.SDK_INT`-guarded; lint `NewApi`
+reports zero errors at `minSdk 17`:
+
+- Theme: `@style/JsrTheme` = `Theme.Holo.NoActionBar` on API 17-20,
+  `Theme.Material.NoActionBar` via `values-v21/` overlay.
+- Card shadow: `View.setElevation` (API 21) behind `SDK_INT >= 21` — no
+  shadow below 21.
+- Secrets: `androidx.security:security-crypto` removed (library `minSdk 21`);
+  `PrefSecrets` (AndroidHostServices.kt): API 23+ keys live in
+  AndroidKeystore (AES-256-GCM); API 17-22 use a random key in app-private
+  prefs with AES/CBC + HMAC-SHA256 (encrypt-then-MAC) — no hardware
+  keystore on these levels, root reads both values and key; `SecureRandom`
+  is seeded from `/dev/urandom` (Android <= 4.3 PRNG advisory, 2013).
+- exec: `Process.waitFor(long, TimeUnit)` / `destroyForcibly()` (API 26)
+  replaced by `exitValue()` polling with a budget and `destroy()` (SIGTERM,
+  1 s grace) — a SIGTERM-resistant child is not killed below API 26;
+  `CompletableFuture` (API 24) replaced by a two-thread pool.
+- Native: NDK r27 refuses `ANDROID_PLATFORM < 21` (CXX1110); the QuickJS JNI
+  library uses no platform APIs, so the build sets the documented waiver
+  `android.ndk.suppressMinSdkVersionError=21` (gradle.properties).
+
+JVM unit tests run at the lowest SDK the toolchain supports: Robolectric
+4.18.1 supports SDK 24+ (`DefaultSdkProvider`; `UnknownSdk` rejects 21).
+Behavior below 24 (prefs secrets, Holo theme, no card shadow, SIGTERM exec)
+is exercised by the instrumentation/conformance runs on the device.
 
 ## Measurements on GT P7510 (Tegra 2, no NEON, Android 4.2.2 API 17)
 

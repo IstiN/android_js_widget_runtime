@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 21+: Material — как раньше до minSdk 17 (issue #6). -->
+<resources>
+    <style name="JsrTheme" parent="@android:style/Theme.Material.NoActionBar" />
+</resources>

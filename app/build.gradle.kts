@@ -8,7 +8,7 @@ android {
     ndkVersion = "27.2.12479018"
     defaultConfig {
         applicationId = "com.test.jsr"
-        minSdk = 24
+        minSdk = 17
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
@@ -56,8 +56,8 @@ android {
 }
 
 dependencies {
-    // Секреты: EncryptedSharedPreferences (issue #3)
-    implementation("androidx.security:security-crypto:1.1.0")
+    // Секреты — своя реализация: security-crypto имеет minSdk 21, целевой
+    // уровень API 17 (issue #6). PrefSecrets в AndroidHostServices.kt.
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.18.1")

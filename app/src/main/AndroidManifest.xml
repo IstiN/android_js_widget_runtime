@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <application
         android:label="JSR Native POC"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/JsrTheme">
         <meta-data android:name="dev.fa1.jsr.NETWORK" android:value="true" />
         <activity
             android:name=".MainActivity"

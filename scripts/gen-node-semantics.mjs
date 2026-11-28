@@ -97,12 +97,12 @@ lines.push('a host surface fills the slot; `partial` (fallback) = reference fall
 lines.push('');
 lines.push('## Minimum SDK');
 lines.push('');
-lines.push('`minSdk = 24`; the port to the family target device (Tegra 2, Android');
-lines.push('4.2.2 = API 17) is **deferred** — see issue');
-lines.push('[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6) with the');
-lines.push('complete >API 17 API list (including `View.setElevation` in the card factory');
-lines.push('below) and the replacements. No `Build.VERSION.SDK_INT` guards are added');
-lines.push('until the port itself lands: untested branches are not shipped.');
+lines.push('`minSdk = 17` (family target device: Tegra 2, Android 4.2.2 = API 17,');
+lines.push('issue [#6](https://github.com/IstiN/android_js_widget_runtime/issues/6)).');
+lines.push('Every >API 17 API in the tree is replaced or');
+lines.push('`Build.VERSION.SDK_INT`-guarded; the card factory guards');
+lines.push('`View.setElevation` behind `SDK_INT >= 21` — below 21 the card renders');
+lines.push('without the shadow. Lint `NewApi` reports zero errors at `minSdk 17`.');
 lines.push('');
 
 for (const row of support) {
