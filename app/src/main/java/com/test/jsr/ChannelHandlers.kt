@@ -1,5 +1,7 @@
 package com.test.jsr
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -86,9 +88,19 @@ class ChannelHandlers(
 
     /** __jsrResolve(id, value): промис __cbs[id] разрешается значением. */
     private fun resolve(id: String, valueJson: String) {
-        val err = engine.eval("__jsrResolve(${JsStrings.quote(id)}, $valueJson);", "resolve")
-        if (err != null) Log.e(TAG, "resolve $id: $err")
+        // Локальная сборка (GT-P7510): eval обязан идти на main-потоке.
+        // QuickJS-контекст не потокобезопасен: boot/callEvent идут на main,
+        // а resolve вызывался из HTTP-executor потока → параллельный eval
+        // давал лживый «SyntaxError: stack overflow» на каждый ответ.
+        mainHandler.post {
+            val code = "try { __jsrResolve(${JsStrings.quote(id)}, $valueJson); } " +
+                "catch (e) { throw new Error('RESOLVE ' + e.message); }"
+            val err = engine.eval(code, "resolve")
+            if (err != null) Log.e(TAG, "resolve $id: $err")
+        }
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun resolveError(payload: String, message: String) {
         val id = try {
@@ -150,6 +162,8 @@ class ChannelHandlers(
                 req.optString("method", "GET").uppercase(),
                 headersOf(req.optJSONObject("headers")),
             ) { result ->
+                // Локальная сборка (GT-P7510): сетевой сбой обязан быть виден.
+                if (result.error != null) Log.e("FetchHandler", "fetch fail: ${result.error}")
                 resolve(req.optString("id"), resolveJson(result))
             }
         }
