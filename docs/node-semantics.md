@@ -11,12 +11,12 @@ a host surface fills the slot; `partial` (fallback) = reference fallback card.
 
 ## Minimum SDK
 
-`minSdk = 24`; the port to the family target device (Tegra 2, Android
-4.2.2 = API 17) is **deferred** — see issue
-[#6](https://github.com/IstiN/android_js_widget_runtime/issues/6) with the
-complete >API 17 API list (including `View.setElevation` in the card factory
-below) and the replacements. No `Build.VERSION.SDK_INT` guards are added
-until the port itself lands: untested branches are not shipped.
+`minSdk = 17` (family target device: Tegra 2, Android 4.2.2 = API 17,
+issue [#6](https://github.com/IstiN/android_js_widget_runtime/issues/6)).
+Every >API 17 API in the tree is replaced or
+`Build.VERSION.SDK_INT`-guarded; the card factory guards
+`View.setElevation` behind `SDK_INT >= 21` — below 21 the card renders
+without the shadow. Lint `NewApi` reports zero errors at `minSdk 17`.
 
 ## `absoluteFill`
 

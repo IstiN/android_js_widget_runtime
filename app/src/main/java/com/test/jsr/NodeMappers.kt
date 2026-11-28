@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -80,7 +81,8 @@ internal object LayoutMapper : NodeMapper {
         "card" to { c: Context -> LinearLayout(c).apply {
             orientation = LinearLayout.VERTICAL
             background = roundDrawable("#FFFFFF", dpF(12f))
-            elevation = dpF(2f)
+            // setElevation — API 21; ниже карта без тени (issue #6).
+            if (Build.VERSION.SDK_INT >= 21) elevation = dpF(2f)
         } },
     )
 
