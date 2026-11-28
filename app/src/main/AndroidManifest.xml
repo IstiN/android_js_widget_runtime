@@ -10,17 +10,13 @@
     -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <application
-        android:label="JSR Native POC"
+        android:label="JSR Widgets"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <meta-data android:name="dev.fa1.jsr.NETWORK" android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
         <!--
           Fixture-runner host: declared in the app manifest because
@@ -32,5 +28,14 @@
           instrumentation class loader.
         -->
         <activity android:name=".ConformanceActivity" android:exported="false" />
+        <activity
+            android:name=".GalleryActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
