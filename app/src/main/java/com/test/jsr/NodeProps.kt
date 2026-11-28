@@ -58,6 +58,22 @@ internal object NodeProps {
         return dp(v.toFloat())
     }
 
+    /**
+     * Локальная сборка (GT-P7510): box-инсет — число ИЛИ массив [t,r,b,l]
+     * (контракт fa_widgets). Старый pxOf молча терял массивы — все отступы
+     * виджетов ([16,20,16,8] и т.п.) выбрасывались.
+     */
+    fun boxInset(props: JSONObject, key: String): IntArray {
+        val v = props.opt(key)
+        if (v is Number) { val p = dp(v.toFloat()); return intArrayOf(p, p, p, p) }
+        if (v is org.json.JSONArray && v.length() >= 4) {
+            // Контракт fa_widgets: [left, top, right, bottom] (Flutter-порядок).
+            fun d(i: Int) = dp(v.optDouble(i, 0.0).toFloat())
+            return intArrayOf(d(0), d(1), d(2), d(3))
+        }
+        return intArrayOf(0, 0, 0, 0)
+    }
+
     /** At least one of the two px sizes is present. */
     fun hasSize(w: Int, h: Int): Boolean = w > 0 || h > 0
 

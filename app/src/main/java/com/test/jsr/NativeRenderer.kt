@@ -265,7 +265,40 @@ class NativeRenderer(
     private val ATTACH: Map<Class<out View>, (View, View) -> Unit> = mapOf(
         ScrollView::class.java to { v, child -> scrollChild(v as ScrollView, child) },
         FrameLayout::class.java to { v, child -> centerChild(v as FrameLayout, child) },
-        ViewGroup::class.java to { v, child -> (v as ViewGroup).addView(child) },
+        // Локальная сборка (GT-P7510): обёртки контракта (padding/gestureDetector/
+        // expanded/opacity/sizedBox) передают ограничения ребёнку — MATCH/MATCH,
+        // а не wrap. Иначе кнопки калькулятора сжимались в узкие таблетки.
+        FillLayout::class.java to { v, child -> (v as FrameLayout).addView(child, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) },
+        ViewGroup::class.java to { v, child ->
+            // Дети списка — TIGHT ширина (Flutter-семантика вертикального
+            // списка: cross-axis constraints tight).
+            if (v.tag == "jsr-list-column") {
+                (v as LinearLayout).addView(child, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            // expanded внутри LinearLayout — weight 1 (flex, дефолт 1).
+            } else if (v is LinearLayout && child.tag == "jsr-expanded") {
+                val horizontal = v.orientation == LinearLayout.HORIZONTAL
+                v.addView(child, if (horizontal)
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+                else
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            // textAlign:'center' — ширину по родителю, гравитация центрует.
+            } else if (v is LinearLayout && child.tag == "jsr-text-center") {
+                val vertical = v.orientation == LinearLayout.VERTICAL
+                v.addView(child, if (vertical)
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                else
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            } else if (v is ViewGroup) {
+                // TextView-ноды (badge/chip) детей по контракту не принимают —
+                // молча пропускаем вместо ClassCastException (регресс m3).
+                (v as ViewGroup).addView(child)
+            } else {
+                android.util.Log.w("NativeRenderer",
+                    "skip child attach: parent ${v.javaClass.simpleName} is not a ViewGroup")
+            }
+        },
     )
 
     private fun attach(view: View, child: View) {
@@ -318,8 +351,8 @@ class NativeRenderer(
 
     private fun applyChildMargin(child: JsNode, childView: View) {
         val lp = childView.layoutParams as? ViewGroup.MarginLayoutParams ?: return
-        val margin = NodeProps.pxOf(child.props, "margin")
-        lp.setMargins(margin, margin, margin, margin)
+        val m = NodeProps.boxInset(child.props, "margin")
+        lp.setMargins(m[0], m[1], m[2], m[3])
         childView.layoutParams = lp
     }
 

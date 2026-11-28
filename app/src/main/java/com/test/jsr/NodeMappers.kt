@@ -82,6 +82,18 @@ internal object LayoutMapper : NodeMapper {
             background = roundDrawable("#FFFFFF", dpF(12f))
             elevation = dpF(2f)
         } },
+        // Локальная сборка (GT-P7510): нативные замены fallback-карточкам
+        // калькулятора/крипты/стоксов. expanded — вес в LinearLayout
+        // (метка в tag, вес ставит default-attacher в NativeRenderer).
+        "expanded" to { c: Context -> FillLayout(c) },
+        "animatedContainer" to { c: Context -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL } },
+        // Локальная сборка (GT-P7510): safeArea — прозрачная обёртка контракта
+        // (падения insets на планшете нет), wrap — упрощённо однострочный ряд.
+        "safeArea" to { c: Context -> FillLayout(c) },
+        "wrap" to { c: Context -> LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL } },
+        // gridView (локальная сборка): вертикальная колонка — предсказуемая
+        // раскладка карточек на всю ширину; GridLayout схлопывал ячейки.
+        "gridView" to { c: Context -> LinearLayout(c).apply { orientation = LinearLayout.VERTICAL } },
     )
 
     override val configure = mapOf(
@@ -89,8 +101,8 @@ internal object LayoutMapper : NodeMapper {
             v.layoutParams = ViewGroup.LayoutParams(NodeProps.pxOf(n.props, "width"), NodeProps.pxOf(n.props, "height"))
         },
         "padding" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
-            val pad = NodeProps.pxOf(n.props, "padding")
-            if (pad > 0) v.setPadding(pad, pad, pad, pad)
+            val ins = NodeProps.boxInset(n.props, "padding")
+            if (ins.any { it > 0 }) v.setPadding(ins[0], ins[1], ins[2], ins[3])
         },
         "absoluteFill" to { v: View, n: JsNode, _: NativeRenderer.EventSink -> fillBackground(v, n.props) },
         "fill" to { v: View, n: JsNode, _: NativeRenderer.EventSink -> fillBackground(v, n.props) },
@@ -99,8 +111,22 @@ internal object LayoutMapper : NodeMapper {
             if (color.isNotEmpty()) {
                 v.background = roundDrawable(color, NodeProps.radiusPx(n.props))
             }
-            val pad = NodeProps.pxOf(n.props, "padding")
-            if (pad > 0) v.setPadding(pad, pad, pad, pad)
+            val ins = NodeProps.boxInset(n.props, "padding")
+            if (ins.any { it > 0 }) v.setPadding(ins[0], ins[1], ins[2], ins[3])
+        },
+        "expanded" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+            v.tag = "jsr-expanded"
+        },
+        "animatedContainer" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+            val decor = n.props.optJSONObject("decoration")
+            val color = decor?.optString("color") ?: ""
+            if (color.isNotEmpty()) {
+                val r = decor?.optDouble("borderRadius", -1.0) ?: -1.0
+                v.background = roundDrawable(color,
+                    if (r < 0) -1f else NodeProps.dp(r.toFloat()).toFloat())
+            }
+            val ins = NodeProps.boxInset(n.props, "padding")
+            if (ins.any { it > 0 }) v.setPadding(ins[0], ins[1], ins[2], ins[3])
         },
         "card" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
             val color = NodeProps.decorationColor(n.props).ifEmpty { n.props.optString("color") }
@@ -136,6 +162,12 @@ internal object TextMapper : NodeMapper {
             if (color.isNotEmpty()) tv.setTextColor(parseColor(color))
             val bold = n.props.optString("fontWeight") in BOLD_WEIGHT_SET
             tv.setTypeface(null, if (bold) Typeface.BOLD else Typeface.NORMAL)
+            // Локальная сборка (GT-P7510): textAlign из стиля; метка ведёт
+            // LinearLayout-attacher к ширине MATCH (гравитация центрует).
+            if (n.props.optString("textAlign") == "center") {
+                tv.gravity = Gravity.CENTER_HORIZONTAL
+                tv.tag = "jsr-text-center"
+            }
         },
         "textField" to { v: View, n: JsNode, sink: NativeRenderer.EventSink ->
             val input = v as EditText
@@ -347,10 +379,14 @@ internal object MaterialMapper : NodeMapper {
 internal object EffectsMapper : NodeMapper {
     override val factories = mapOf(
         "opacity" to { c: Context -> FillLayout(c) },
+        "animatedOpacity" to { c: Context -> FillLayout(c) },
     )
 
     override val configure = mapOf(
         "opacity" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
+            v.alpha = NodeProps.clampedAlpha(n.props)
+        },
+        "animatedOpacity" to { v: View, n: JsNode, _: NativeRenderer.EventSink ->
             v.alpha = NodeProps.clampedAlpha(n.props)
         },
     )
@@ -558,7 +594,12 @@ private fun button(c: Context): Button = Button(c).apply { isAllCaps = false }
 class ScrollColumn(context: Context) : ScrollView(context) {
     init {
         addView(
-            LinearLayout(context).apply { orientation = LinearLayout.VERTICAL },
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                // Локальная сборка (GT-P7510): метка для attacher — дети списка
+                // получают TIGHT ширину (как во Flutter-списке).
+                tag = "jsr-list-column"
+            },
             ViewGroup.LayoutParams(-1, -2),
         )
     }
